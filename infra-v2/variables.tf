@@ -1,35 +1,3 @@
-variable "project_name" {
-  description = "Prefix used for V2 AWS resource names and tags."
-  type        = string
-  default     = "moyeota-v2"
-}
-
-variable "aws_region" {
-  description = "AWS region for V2 workload resources."
-  type        = string
-  default     = "ap-northeast-2"
-}
-
-variable "aws_profile" {
-  description = "Optional local AWS CLI profile. Leave null to use the default credential chain."
-  type        = string
-  default     = null
-  nullable    = true
-}
-
-variable "vpc_cidr" {
-  description = "New V2 VPC CIDR. Check this against V1, VPN, and connected networks before apply."
-  type        = string
-  default     = "10.0.0.0/16"
-
-  validation {
-    condition     = can(cidrsubnet(var.vpc_cidr, 8, 0))
-    error_message = "vpc_cidr must be a valid IPv4 CIDR with a prefix of /24 or larger."
-  }
-}
-
-variable "availability_zones" {
-  description = "Two AZs for the V2 public ALB and data subnets. Workloads run in the first AZ initially."
   type        = list(string)
   default     = ["ap-northeast-2a", "ap-northeast-2c"]
 
@@ -42,7 +10,7 @@ variable "availability_zones" {
 variable "prod_app_instance_type" {
   description = "EC2 type for the Prod Next.js, Spring REST, and FastAPI Compose host."
   type        = string
-  default     = "t3.medium"
+  default     = "t3.small"
 }
 
 variable "prod_websocket_instance_type" {
@@ -94,3 +62,59 @@ variable "alb_certificate_arn" {
 
 variable "alb_ingress_cidrs" {
   description = "IPv4 CIDRs allowed to reach the internet-facing ALB. Restrict to CloudFront origins or trusted ranges when ready."
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+
+  validation {
+    condition     = alltrue([for cidr in var.alb_ingress_cidrs : can(cidrnetmask(cidr))])
+    error_message = "alb_ingress_cidrs must contain valid IPv4 CIDRs."
+  }
+}
+
+variable "alb_cloudfront_prefix_list_id" {
+  description = "Optional AWS-managed CloudFront origin-facing prefix list ID. When set, it replaces alb_ingress_cidrs as the ALB ingress source."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "frontend_port" {
+  description = "Next.js host port on the Prod App EC2 instance."
+  type        = number
+  default     = 3000
+}
+
+variable "rest_port" {
+  description = "Spring REST host port on the Prod App EC2 instance."
+  type        = number
+  default     = 8080
+}
+
+variable "fastapi_port" {
+  description = "FastAPI host port on the Prod App EC2 instance."
+  type        = number
+  default     = 8000
+}
+
+variable "websocket_port" {
+  description = "WebSocket host port on the separate Prod WebSocket EC2 instance."
+  type        = number
+  default     = 8080
+}
+
+variable "spring_management_port" {
+  description = "Spring Actuator health-check port, reachable from the ALB only."
+  type        = number
+  default     = 8090
+}
+
+variable "alb_idle_timeout_seconds" {
+  description = "ALB idle timeout for long-lived WebSocket connections."
+  type        = number
+  default     = 300
+
+  validation {
+    condition     = var.alb_idle_timeout_seconds >= 1 && var.alb_idle_timeout_seconds <= 4000
+    error_message = "alb_idle_timeout_seconds must be between 1 and 4000."
+  }
+}
