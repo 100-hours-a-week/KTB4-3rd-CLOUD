@@ -1,0 +1,22 @@
+.env
+__pycache__/
+*.py[cod]
+
+# Terraform working data and local credentials/state
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+
+/deploy/
+/docs/
+/infra/
+/loadtest-infra/
+/loadtest-scenarios/
+/loadtest-target/
+/perf/
+/scripts/
