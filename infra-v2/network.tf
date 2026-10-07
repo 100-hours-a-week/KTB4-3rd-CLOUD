@@ -1,26 +1,20 @@
-resource "aws_vpc" "v2" {
-  cidr_block           = var.vpc_cidr
-  enable_dns_support   = true
-  enable_dns_hostnames = true
-  instance_tenancy     = "default"
-
-  tags = {
-    Name = "${var.project_name}-vpc"
-  }
+# The shared V1 VPC and its Internet Gateway are data sources so this root
+# cannot create, replace, or take ownership of those V1 network resources.
+data "aws_vpc" "shared" {
+  id = var.vpc_id
 }
 
-resource "aws_internet_gateway" "v2" {
-  vpc_id = aws_vpc.v2.id
-
-  tags = {
-    Name = "${var.project_name}-igw"
+data "aws_internet_gateway" "shared" {
+  filter {
+    name   = "attachment.vpc-id"
+    values = [data.aws_vpc.shared.id]
   }
 }
 
 resource "aws_subnet" "v2" {
   for_each = local.subnet_specs
 
-  vpc_id                  = aws_vpc.v2.id
+  vpc_id                  = data.aws_vpc.shared.id
   cidr_block              = each.value.cidr
   availability_zone       = each.value.az
   map_public_ip_on_launch = false
@@ -31,8 +25,10 @@ resource "aws_subnet" "v2" {
   }
 }
 
+# These route tables and associations are V2-owned and attach only to V2
+# subnets. Existing V1 subnet associations are left untouched.
 resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.v2.id
+  vpc_id = data.aws_vpc.shared.id
 
   tags = {
     Name = "${var.project_name}-public-rt"
@@ -43,7 +39,7 @@ resource "aws_route_table" "public" {
 resource "aws_route" "public_internet" {
   route_table_id         = aws_route_table.public.id
   destination_cidr_block = "0.0.0.0/0"
-  gateway_id             = aws_internet_gateway.v2.id
+  gateway_id             = data.aws_internet_gateway.shared.id
 }
 
 resource "aws_route_table_association" "public" {
@@ -65,7 +61,7 @@ resource "aws_nat_gateway" "single_az" {
   allocation_id = aws_eip.nat.id
   subnet_id     = aws_subnet.v2["public_a"].id
 
-  depends_on = [aws_internet_gateway.v2]
+  depends_on = [aws_route.public_internet]
 
   tags = {
     Name = "${var.project_name}-nat-a"
@@ -73,7 +69,7 @@ resource "aws_nat_gateway" "single_az" {
 }
 
 resource "aws_route_table" "private_workloads" {
-  vpc_id = aws_vpc.v2.id
+  vpc_id = data.aws_vpc.shared.id
 
   tags = {
     Name = "${var.project_name}-private-workloads-rt"
@@ -96,7 +92,7 @@ resource "aws_route_table_association" "private_workloads" {
 
 # Data subnets remain isolated; RDS/Redis resources are not created in this root yet.
 resource "aws_route_table" "private_data" {
-  vpc_id = aws_vpc.v2.id
+  vpc_id = data.aws_vpc.shared.id
 
   tags = {
     Name = "${var.project_name}-private-data-rt"

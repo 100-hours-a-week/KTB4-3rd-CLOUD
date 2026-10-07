@@ -23,7 +23,7 @@ resource "aws_lb_target_group" "service" {
   port        = each.value.port
   protocol    = "HTTP"
   target_type = "instance"
-  vpc_id      = aws_vpc.v2.id
+  vpc_id      = data.aws_vpc.shared.id
 
   health_check {
     enabled             = true

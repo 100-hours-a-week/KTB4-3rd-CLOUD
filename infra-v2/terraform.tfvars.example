@@ -1,0 +1,38 @@
+project_name = "moyeota-v2"
+aws_region   = "ap-northeast-2"
+aws_profile  = null
+
+# From infra/terraform.tfstate. Verify this ID against the live AWS account.
+vpc_id = "vpc-054f8f601f1b9f1b3"
+
+availability_zones = ["ap-northeast-2a", "ap-northeast-2c"]
+
+# Candidate CIDRs avoid the V1 state subnets 10.20.10.0/24 and
+# 10.20.20.0/24. Check all live VPC subnets before using these values.
+subnet_cidrs = {
+  public_a = "10.20.30.0/24"
+  public_b = "10.20.31.0/24"
+  app      = "10.20.40.0/24"
+  dev      = "10.20.41.0/24"
+  data_a   = "10.20.100.0/24"
+  data_b   = "10.20.101.0/24"
+}
+
+prod_app_instance_type       = "t3.small"
+prod_websocket_instance_type = "t3.medium"
+dev_instance_type            = "t3.medium"
+root_volume_size_gib         = 30
+dev_data_volume_size_gib     = 30
+
+# Leave null until an ACM certificate in ap-northeast-2 is ready.
+alb_certificate_arn           = null
+alb_ingress_cidrs             = ["0.0.0.0/0"]
+alb_cloudfront_prefix_list_id = null
+
+docker_compose_version   = "v2.39.4"
+frontend_port            = 3000
+rest_port                = 8080
+fastapi_port             = 8000
+websocket_port           = 8080
+spring_management_port   = 8090
+alb_idle_timeout_seconds = 300
