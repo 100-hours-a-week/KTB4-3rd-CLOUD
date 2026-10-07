@@ -11,37 +11,37 @@ locals {
 
   subnet_specs = {
     public_a = {
-      cidr  = cidrsubnet(var.vpc_cidr, 8, 0)
+      cidr  = var.subnet_cidrs.public_a
       az    = local.az_a
       tier  = "public"
       label = "public-a"
     }
     public_b = {
-      cidr  = cidrsubnet(var.vpc_cidr, 8, 1)
+      cidr  = var.subnet_cidrs.public_b
       az    = local.az_b
       tier  = "public"
       label = "public-b"
     }
     app = {
-      cidr  = cidrsubnet(var.vpc_cidr, 8, 10)
+      cidr  = var.subnet_cidrs.app
       az    = local.az_a
       tier  = "private-app"
       label = "app-a"
     }
     dev = {
-      cidr  = cidrsubnet(var.vpc_cidr, 8, 20)
+      cidr  = var.subnet_cidrs.dev
       az    = local.az_a
       tier  = "private-dev"
       label = "dev-a"
     }
     data_a = {
-      cidr  = cidrsubnet(var.vpc_cidr, 8, 100)
+      cidr  = var.subnet_cidrs.data_a
       az    = local.az_a
       tier  = "private-data"
       label = "data-a"
     }
     data_b = {
-      cidr  = cidrsubnet(var.vpc_cidr, 8, 101)
+      cidr  = var.subnet_cidrs.data_b
       az    = local.az_b
       tier  = "private-data"
       label = "data-b"
