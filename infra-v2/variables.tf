@@ -1,9 +1,64 @@
+variable "project_name" {
+  description = "Prefix used for V2 AWS resource names and tags."
+  type        = string
+  default     = "moyeota-v2"
+}
+
+variable "aws_region" {
+  description = "AWS region for V2 workload resources."
+  type        = string
+  default     = "ap-northeast-2"
+}
+
+variable "aws_profile" {
+  description = "Optional local AWS CLI profile. Leave null to use the default credential chain."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "vpc_id" {
+  description = "ID of the existing V1 VPC to share. This Terraform root only reads the VPC."
+  type        = string
+
+  validation {
+    condition     = can(regex("^vpc-[0-9a-f]+$", var.vpc_id))
+    error_message = "vpc_id must be an existing VPC ID."
+  }
+}
+
+variable "availability_zones" {
+  description = "Two AZs for V2 public ALB and data subnets. Workloads initially run in the first AZ."
   type        = list(string)
   default     = ["ap-northeast-2a", "ap-northeast-2c"]
 
   validation {
     condition     = length(var.availability_zones) == 2 && length(distinct(var.availability_zones)) == 2
     error_message = "availability_zones must contain exactly two distinct AZ names."
+  }
+}
+
+variable "subnet_cidrs" {
+  description = "Six unused /24 CIDRs inside the shared VPC, verified against all existing AWS subnets."
+  type = object({
+    public_a = string
+    public_b = string
+    app      = string
+    dev      = string
+    data_a   = string
+    data_b   = string
+  })
+
+  validation {
+    condition = alltrue([
+      for cidr in values(var.subnet_cidrs) : can(cidrnetmask(cidr)) && can(regex("/24$", cidr))
+    ])
+    error_message = "Every subnet_cidrs value must be a valid IPv4 /24 CIDR."
+  }
+
+  validation {
+    condition     = length(distinct(values(var.subnet_cidrs))) == 6
+    error_message = "Each V2 subnet must have a distinct CIDR."
   }
 }
 
@@ -61,7 +116,7 @@ variable "alb_certificate_arn" {
 }
 
 variable "alb_ingress_cidrs" {
-  description = "IPv4 CIDRs allowed to reach the internet-facing ALB. Restrict to CloudFront origins or trusted ranges when ready."
+  description = "IPv4 CIDRs allowed to reach the internet-facing ALB. Restrict to trusted ranges when ready."
   type        = list(string)
   default     = ["0.0.0.0/0"]
 
@@ -72,7 +127,7 @@ variable "alb_ingress_cidrs" {
 }
 
 variable "alb_cloudfront_prefix_list_id" {
-  description = "Optional AWS-managed CloudFront origin-facing prefix list ID. When set, it replaces alb_ingress_cidrs as the ALB ingress source."
+  description = "Optional AWS-managed CloudFront origin-facing prefix list ID."
   type        = string
   default     = null
   nullable    = true
@@ -106,6 +161,30 @@ variable "spring_management_port" {
   description = "Spring Actuator health-check port, reachable from the ALB only."
   type        = number
   default     = 8090
+}
+
+variable "frontend_health_path" {
+  description = "HTTP health-check path exposed by the Next.js host port."
+  type        = string
+  default     = "/"
+}
+
+variable "rest_health_path" {
+  description = "Spring REST readiness path exposed by the management port."
+  type        = string
+  default     = "/actuator/health/readiness"
+}
+
+variable "fastapi_health_path" {
+  description = "HTTP health-check path exposed by FastAPI."
+  type        = string
+  default     = "/health"
+}
+
+variable "websocket_health_path" {
+  description = "Spring WebSocket readiness path exposed by the management port."
+  type        = string
+  default     = "/actuator/health/readiness"
 }
 
 variable "alb_idle_timeout_seconds" {
