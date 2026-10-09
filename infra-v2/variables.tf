@@ -197,3 +197,82 @@ variable "alb_idle_timeout_seconds" {
     error_message = "alb_idle_timeout_seconds must be between 1 and 4000."
   }
 }
+
+# -----------------------------------------------------------------------------
+# ECS (ecs.tf)
+# -----------------------------------------------------------------------------
+
+variable "ecs_stages" {
+  description = "ECS Cluster를 생성할 스테이지 목록. 단계적으로 도입할 때 일부만 지정한다."
+  type        = list(string)
+  default     = ["dev", "stg", "prod"]
+
+  validation {
+    condition     = alltrue([for s in var.ecs_stages : contains(["dev", "stg", "prod"], s)])
+    error_message = "ecs_stages may only contain dev, stg, prod."
+  }
+}
+
+variable "ecs_services" {
+  description = "각 클러스터에서 운영할 ECS Service 목록. 서비스마다 스테이지별 Task Role이 생성된다."
+  type        = list(string)
+  default     = ["rest", "websocket", "frontend", "fastapi"]
+
+  validation {
+    condition     = alltrue([for s in var.ecs_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
+    error_message = "ecs_services may only contain rest, websocket, frontend, fastapi (locals.ecs_service_specs keys)."
+  }
+}
+
+variable "github_org" {
+  description = "GitHub organization used in OIDC trust conditions."
+  type        = string
+  default     = "100-hours-a-week"
+}
+
+variable "github_cloud_repository" {
+  description = "ECS 배포 워크플로가 실행되는 레포. job의 environment(dev/stg/prod)로 스테이지별 Deploy Role이 구분된다."
+  type        = string
+  default     = "KTB4-3rd-CLOUD"
+}
+
+variable "prod_ecs_operator_group_name" {
+  description = "Prod ECS Exec를 허용할 기존 IAM 그룹 이름. null이면 연결하지 않는다(SSO Permission Set에 직접 붙이는 경우)."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "ecs_container_images" {
+  description = <<-EOT
+    스테이지 → 서비스 → 최초 Task Definition 이미지. 이미지가 있는 서비스만 ECS Service를 만든다.
+    태그 대신 digest(<repo>@sha256:...)를 권장한다. 이후 revision은 CI(Deploy Role)가 등록하며 Terraform은 되돌리지 않는다.
+    예) { prod = { rest = "<account>.dkr.ecr.ap-northeast-2.amazonaws.com/moyeota/be@sha256:..." } }
+  EOT
+  type    = map(map(string))
+  default = {}
+
+  validation {
+    condition = alltrue(flatten([
+      for stage, images in var.ecs_container_images : [
+        for svc, image in images : contains(["dev", "stg", "prod"], stage) && contains(["rest", "websocket", "frontend", "fastapi"], svc)
+      ]
+    ]))
+    error_message = "ecs_container_images keys must be stage (dev/stg/prod) → service (rest/websocket/frontend/fastapi)."
+  }
+}
+
+variable "ecs_prod_alb_cutover" {
+  description = <<-EOT
+    false(기본): Prod ECS 규칙은 X-Moyeota-Stage: prod 헤더 요청만 받고, 기존 Compose Target Group 규칙이 실제 트래픽을 받는다.
+    true       : 헤더 조건을 빼고 우선순위 1~4로 기존 규칙보다 앞서 Prod 트래픽을 ECS로 보낸다.
+  EOT
+  type    = bool
+  default = false
+}
+
+variable "ecs_alb_host_headers" {
+  description = "스테이지별 ALB host-header 라우팅 (예: { stg = [\"stg.example.com\"] }). stg에 지정하면 헤더 조건 대신 host 기반으로 라우팅한다."
+  type        = map(list(string))
+  default     = {}
+}

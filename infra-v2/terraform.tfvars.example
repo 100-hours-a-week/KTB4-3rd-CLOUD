@@ -36,3 +36,30 @@ fastapi_port             = 8000
 websocket_port           = 8080
 spring_management_port   = 8090
 alb_idle_timeout_seconds = 300
+
+# ECS (ecs.tf)
+ecs_stages              = ["dev", "stg", "prod"]
+ecs_services            = ["rest", "websocket", "frontend", "fastapi"]
+github_org              = "100-hours-a-week"
+github_cloud_repository = "KTB4-3rd-CLOUD"
+
+# Prod ECS Exec를 허용할 기존 IAM 그룹. 없으면 null로 두고 SSO Permission Set에 정책을 직접 붙인다.
+prod_ecs_operator_group_name = null
+
+# ECS Service 최초 이미지 (스테이지 → 서비스). 이미지가 있는 서비스만 ECS Service가 만들어진다.
+# 비워 두면 Cluster·ASG·Capacity Provider·IAM만 생성된다. digest 고정을 권장한다.
+ecs_container_images = {
+  # stg = {
+  #   rest      = "<account-id>.dkr.ecr.ap-northeast-2.amazonaws.com/moyeota/be@sha256:<digest>"
+  #   websocket = "<account-id>.dkr.ecr.ap-northeast-2.amazonaws.com/moyeota/be@sha256:<digest>"
+  #   frontend  = "<account-id>.dkr.ecr.ap-northeast-2.amazonaws.com/moyeota/fe@sha256:<digest>"
+  #   fastapi   = "<account-id>.dkr.ecr.ap-northeast-2.amazonaws.com/moyeota/ai@sha256:<digest>"
+  # }
+}
+
+# false: Prod ECS 규칙은 "X-Moyeota-Stage: prod" 헤더 요청만 받는다 (기존 Compose 라우팅 유지)
+# true : Prod 트래픽을 ECS Service로 전환
+ecs_prod_alb_cutover = false
+
+# stg를 host 기반으로 라우팅하려면 지정 (없으면 "X-Moyeota-Stage: stg" 헤더로 라우팅)
+ecs_alb_host_headers = {}
