@@ -1,0 +1,281 @@
+name: FE CI
+
+on:
+  # PR은 검증만 수행하고 ECR push와 배포는 하지 않는다.
+  pull_request:
+    branches:
+      - develop
+      - main
+      - 'release/**'
+
+  # develop은 Dev 이미지, release/vX.Y.Z는 Stg 이미지(rc-*) 생성 대상이고,
+  # main은 Prod CD의 검증 대상이다.
+  # main에서는 이미지를 다시 빌드해 배포하지 않고, Stg에서 검증한
+  # 이미지 Digest를 Prod CD가 승격한다.
+  push:
+    branches:
+      - develop
+      - main
+      - 'release/**'
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  IMAGE_NAME: moyeota-fe
+  NEXT_PUBLIC_API_BASE_URL: ${{ vars.NEXT_PUBLIC_API_BASE_URL }}
+  NEXT_PUBLIC_KAKAO_MAP_APP_KEY: ${{ vars.NEXT_PUBLIC_KAKAO_MAP_APP_KEY }}
+  NEXT_PUBLIC_GA_ID: ${{ vars.NEXT_PUBLIC_GA_ID }}
+  NEXT_PUBLIC_SENTRY_DSN: ${{ vars.NEXT_PUBLIC_SENTRY_DSN }}
+  NEXT_PUBLIC_SENTRY_ENVIRONMENT: ${{ vars.NEXT_PUBLIC_SENTRY_ENVIRONMENT }}
+  NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE: ${{ vars.NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE }}
+
+jobs:
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Unit test
+        run: pnpm test
+
+  quality:
+    name: Static checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Chromatic 의 baseline 비교를 위해 전체 히스토리가 필요하다.
+          fetch-depth: 0
+
+      # v6 는 부트스트랩 pnpm 을 설치한 뒤 self-update 로 타깃 버전에 맞추는데,
+      # 그 과정이 self-installer 단계에서 실패해 v4 를 사용한다.
+      # v4 는 요청한 버전을 그대로 설치한다.
+      # version 값은 package.json 의 packageManager 와 반드시 일치해야 한다.
+      # 두 값이 어긋나면 action 이 "Multiple versions of pnpm specified" 로 실패한다.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.12.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # 빠르고 싼 검증부터 실행해 피드백 시간을 줄인다.
+      - name: Lint
+        run: pnpm lint
+
+      - name: Format check
+        run: pnpm format:check
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Run Chromatic
+        if: github.event_name == 'push'
+        run: pnpm run chromatic --exit-zero-on-changes
+        env:
+          CHROMATIC_PROJECT_TOKEN: ${{ secrets.CHROMATIC_PROJECT_TOKEN }}
+
+  build:
+    name: Build and publish
+    needs:
+      - test
+      - quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+      security-events: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+
+      # develop에서는 Dev 배포용 이미지를, release/vX.Y.Z에서는 Stg 배포용 이미지(rc-*)를 ECR에 Push한다.
+      # main과 PR에서는 Dockerfile 검증만 수행하고 ECR에 Push하지 않는다.
+      - name: Resolve image tag
+        id: meta
+        run: |
+          set -Eeuo pipefail
+
+          if [[ "$GITHUB_REF_NAME" == develop ]]; then
+            image_tag="dev-${GITHUB_SHA:0:7}"
+            release_version=""
+            if [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+              push_image=true
+            else
+              push_image=false
+            fi
+          elif [[ "$GITHUB_REF_NAME" == release/* ]]; then
+            version="${GITHUB_REF_NAME#release/}"
+            [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            image_tag="rc-${version}-${GITHUB_SHA:0:7}"
+            release_version="${version#v}"
+            if [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]]; then
+              push_image=true
+            else
+              push_image=false
+            fi
+          elif [[ "$GITHUB_REF_NAME" == main ]]; then
+            image_tag="main-${GITHUB_SHA:0:7}"
+            release_version="$(node -p "require('./package.json').version")"
+            push_image=false
+          else
+            image_tag="pr-${GITHUB_SHA:0:7}"
+            release_version=""
+            push_image=false
+          fi
+
+          {
+            echo "image_tag=$image_tag"
+            echo "release_version=$release_version"
+            echo "push_image=$push_image"
+            echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        run: |
+          set -Eeuo pipefail
+
+          docker_build_args=()
+          if [[ -n "${SENTRY_AUTH_TOKEN:-}" ]]; then
+            docker_build_args+=(--secret "id=sentry_auth_token,env=SENTRY_AUTH_TOKEN")
+          fi
+
+          DOCKER_BUILDKIT=1 docker build \
+            --file Dockerfile \
+            --tag "${IMAGE_NAME}:${IMAGE_TAG}" \
+            --build-arg "BUILD_SHA=${GITHUB_SHA}" \
+            --build-arg "RELEASE_VERSION=${{ steps.meta.outputs.release_version }}" \
+            --build-arg "BUILD_DATE=${{ steps.meta.outputs.build_date }}" \
+            --build-arg "NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-/api}" \
+            --build-arg "NEXT_PUBLIC_KAKAO_MAP_APP_KEY=${NEXT_PUBLIC_KAKAO_MAP_APP_KEY:-}" \
+            --build-arg "NEXT_PUBLIC_GA_ID=${NEXT_PUBLIC_GA_ID:-}" \
+            --build-arg "NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN:-}" \
+            --build-arg "NEXT_PUBLIC_SENTRY_ENVIRONMENT=${NEXT_PUBLIC_SENTRY_ENVIRONMENT:-production}" \
+            --build-arg "NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=${NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE:-0.1}" \
+            --build-arg "SENTRY_ORG=${SENTRY_ORG:-}" \
+            --build-arg "SENTRY_PROJECT=${SENTRY_PROJECT:-}" \
+            "${docker_build_args[@]}" \
+            .
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+          SENTRY_AUTH_TOKEN: ${{ github.event_name == 'push' && secrets.SENTRY_AUTH_TOKEN || '' }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        shell: bash
+
+      - name: Configure AWS credentials
+        if: steps.meta.outputs.push_image == 'true'
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: fe-ci-${{ github.run_id }}
+
+      - name: Login to ECR
+        if: steps.meta.outputs.push_image == 'true'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push image
+        if: steps.meta.outputs.push_image == 'true'
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          set -Eeuo pipefail
+
+          remote_image="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+          docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "$remote_image"
+          docker push "$remote_image"
+
+      - name: Resolve image digest and create release manifest
+        if: steps.meta.outputs.push_image == 'true'
+        id: release
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+          RELEASE_VERSION: ${{ steps.meta.outputs.release_version }}
+        run: |
+          set -Eeuo pipefail
+
+          image_digest="$({
+            aws ecr describe-images \
+              --repository-name "$ECR_REPOSITORY" \
+              --image-ids imageTag="$IMAGE_TAG" \
+              --query 'imageDetails[0].imageDigest' \
+              --output text
+          })"
+
+          [[ "$image_digest" == sha256:* ]]
+
+          mkdir -p release-manifest
+          jq -n \
+            --arg source_branch "$GITHUB_REF_NAME" \
+            --arg source_sha "$GITHUB_SHA" \
+            --arg image_tag "$IMAGE_TAG" \
+            --arg image_digest "$image_digest" \
+            --arg release_version "$RELEASE_VERSION" \
+            --arg ecr_repository "$ECR_REPOSITORY" \
+            '{
+              source_branch: $source_branch,
+              source_sha: $source_sha,
+              image_tag: $image_tag,
+              image_digest: $image_digest,
+              release_version: $release_version,
+              ecr_repository: $ecr_repository
+            }' > release-manifest/release-manifest.json
+
+          echo "image_digest=$image_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release manifest
+        if: steps.meta.outputs.push_image == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: release-manifest/release-manifest.json
+          retention-days: 14
