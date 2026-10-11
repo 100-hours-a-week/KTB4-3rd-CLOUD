@@ -1,5 +1,5 @@
 output "capacity_provider_name" {
-  description = "ecs-cluster capacity_providers 와 ecs-service capacity_provider_strategy 에 넣는 값"
+  description = "루트 aws_ecs_cluster_capacity_providers 와 ecs-service capacity_provider_strategy 에 넣는 값"
   value       = aws_ecs_capacity_provider.this.name
 }
 
