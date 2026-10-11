@@ -14,6 +14,15 @@ output "alb_zone_id" {
   value = aws_lb.public.zone_id
 }
 
+output "nonprod_alb_dns_name" {
+  description = "Non-Prod ALB(dev·stg). dev.moyeota.com·stg.moyeota.com을 이 DNS로 ALIAS한다."
+  value       = aws_lb.nonprod.dns_name
+}
+
+output "nonprod_alb_zone_id" {
+  value = aws_lb.nonprod.zone_id
+}
+
 output "instance_ids" {
   value = { for role, instance in aws_instance.host : role => instance.id }
 }

@@ -133,6 +133,35 @@ variable "alb_cloudfront_prefix_list_id" {
   nullable    = true
 }
 
+variable "nonprod_alb_certificate_arn" {
+  description = "Optional ACM certificate ARN (ap-northeast-2) for the Non-Prod ALB, covering dev.moyeota.com and stg.moyeota.com. When null, the Non-Prod ALB serves HTTP only."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "admin_cidrs" {
+  description = "운영자(팀) IPv4 CIDR. Non-Prod ALB(dev·stg) 인바운드에 허용한다."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.admin_cidrs : can(cidrnetmask(cidr))])
+    error_message = "admin_cidrs must contain valid IPv4 CIDRs."
+  }
+}
+
+variable "dev_qa_cidrs" {
+  description = "개발자·QA IPv4 CIDR. Non-Prod ALB(dev·stg) 인바운드에 허용한다."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for cidr in var.dev_qa_cidrs : can(cidrnetmask(cidr))])
+    error_message = "dev_qa_cidrs must contain valid IPv4 CIDRs."
+  }
+}
+
 variable "frontend_port" {
   description = "Next.js host port on the Prod App EC2 instance."
   type        = number

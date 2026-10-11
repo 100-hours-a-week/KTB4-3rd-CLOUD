@@ -125,6 +125,9 @@ locals {
     var.websocket_port,
     var.spring_management_port,
   ])
+
+  # Non-Prod ALB(dev·stg) 인바운드 허용 CIDR = 운영자 + 개발자·QA
+  nonprod_alb_ingress_cidrs = distinct(concat(var.admin_cidrs, var.dev_qa_cidrs))
 }
 
 # -----------------------------------------------------------------------------
