@@ -103,7 +103,7 @@ locals {
   path_routes = {
     websocket = {
       priority      = 10
-      path_patterns = ["/api/wss*"]
+      path_patterns = ["/api/wss"]
       target_group  = "websocket"
     }
     rest = {
@@ -133,7 +133,7 @@ locals {
 #   - REST      : 1 vCPU / 1 GiB, 컨테이너 hard limit 960 MiB, -Xmx512m, 앱 8080 · 관리 8090
 #   - WebSocket : 0.5 vCPU / 1 GiB, 컨테이너 hard limit 960 MiB, heap 최대 512 MiB (잠정)
 #   - frontend · fastapi : 측정값 없음 → general-od(t3.small) 호스트당 2태스크가 들어가는 잠정값
-#   route_order : ALB Listener Rule 우선순위 오프셋 (/api/wss* 가 /api/* 보다 먼저)
+#   route_order : ALB Listener Rule 우선순위 오프셋 (/api/wss 가 /api/* 보다 먼저)
 # -----------------------------------------------------------------------------
 locals {
   ecs_service_specs = {
@@ -145,7 +145,7 @@ locals {
       container_port       = var.websocket_port
       additional_ports     = [var.spring_management_port]
       environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx512m" }
-      path_patterns        = ["/api/wss*"]
+      path_patterns        = ["/api/wss"]
       route_order          = 0
       health_check_path    = var.websocket_health_path
       health_check_port    = var.spring_management_port
