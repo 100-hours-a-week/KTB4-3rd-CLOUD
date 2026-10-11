@@ -73,16 +73,6 @@ module "ecs_cluster" {
   container_insights = each.value.container_insights
   vpc_id             = data.aws_vpc.shared.id
 
-  # ecs-asg가 만든 Capacity Provider를 이 클러스터에 등록
-  capacity_providers = [
-    for k, asg in module.ecs_asg : asg.capacity_provider_name if local.ecs_asgs[k].stage == each.key
-  ]
-  default_capacity_provider_strategy = [{
-    capacity_provider = module.ecs_asg["${each.key}-${each.value.default_asg}"].capacity_provider_name
-    weight            = 1
-    base              = 0
-  }]
-
   enable_execute_command  = true
   exec_log_retention_days = each.value.exec_log_retention_days
 
@@ -120,6 +110,36 @@ module "ecs_asg" {
 }
 
 # -----------------------------------------------------------------------------
+# 2-1) Capacity Provider를 클러스터에 등록 (스테이지당 1개)
+#   ecs-asg가 ecs-cluster 출력(클러스터 이름·인스턴스 프로파일·SG)을 받으므로
+#   등록 리소스를 ecs-cluster 모듈 안에 두면 모듈 간 순환 참조가 생긴다 → 루트에 둔다.
+#   managed scaling을 켠 Capacity Provider는 클러스터 하나에만 연결된다.
+# -----------------------------------------------------------------------------
+
+resource "aws_ecs_cluster_capacity_providers" "ecs" {
+  for_each = local.ecs_stages
+
+  cluster_name = module.ecs_cluster[each.key].cluster_name
+  capacity_providers = [
+    for k, asg in module.ecs_asg : asg.capacity_provider_name if local.ecs_asgs[k].stage == each.key
+  ]
+
+  default_capacity_provider_strategy {
+    capacity_provider = module.ecs_asg["${each.key}-${each.value.default_asg}"].capacity_provider_name
+    weight            = 1
+    base              = 0
+  }
+}
+
+locals {
+  # Capacity Provider 등록이 끝난 뒤에 확정되는 클러스터 ARN.
+  # 등록 리소스를 참조하므로 ecs-service가 등록 전 Capacity Provider를 쓰는 순서 오류를 막는다.
+  ecs_capacity_ready_cluster_arns = {
+    for stage, cp in aws_ecs_cluster_capacity_providers.ecs : stage => module.ecs_cluster[stage].cluster_arn
+  }
+}
+
+# -----------------------------------------------------------------------------
 # 3) ECS Service (스테이지 × 서비스)
 # -----------------------------------------------------------------------------
 
@@ -132,7 +152,7 @@ module "ecs_service" {
   name         = each.value.service
 
   cluster_name       = module.ecs_cluster[each.value.stage].cluster_name
-  cluster_arn        = module.ecs_cluster[each.value.stage].capacity_ready_cluster_arn
+  cluster_arn        = local.ecs_capacity_ready_cluster_arns[each.value.stage]
   execution_role_arn = module.ecs_cluster[each.value.stage].task_execution_role_arn
   task_role_arn      = module.ecs_cluster[each.value.stage].task_role_arns[each.value.service]
 

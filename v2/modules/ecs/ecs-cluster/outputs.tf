@@ -7,16 +7,6 @@ output "cluster_arn" {
   value = aws_ecs_cluster.this.arn
 }
 
-output "capacity_ready_cluster_arn" {
-  description = <<-EOT
-    Capacity Provider 등록(aws_ecs_cluster_capacity_providers)이 끝난 뒤에 확정되는 클러스터 ARN.
-    ecs-service 모듈에 넘겨 서비스가 등록 전 Capacity Provider를 참조하는 순서 오류를 막는다.
-  EOT
-  value = aws_ecs_cluster.this.arn
-
-  depends_on = [aws_ecs_cluster_capacity_providers.this]
-}
-
 output "service_connect_namespace_arn" {
   description = "ECS Service의 service_connect_configuration.namespace에 지정"
   value       = aws_service_discovery_http_namespace.this.arn

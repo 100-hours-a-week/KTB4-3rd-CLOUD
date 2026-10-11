@@ -27,7 +27,7 @@ variable "cluster_name" {
 }
 
 variable "cluster_arn" {
-  description = "ecs-cluster의 capacity_ready_cluster_arn (Capacity Provider 등록 이후 값)"
+  description = "루트 ecs.tf의 ecs_capacity_ready_cluster_arns 값 (Capacity Provider 등록 이후 확정)"
   type        = string
 }
 

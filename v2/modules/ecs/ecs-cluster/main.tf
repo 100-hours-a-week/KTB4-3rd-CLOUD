@@ -7,7 +7,8 @@
 #       · 컨테이너 인스턴스 Role·SG (자기 클러스터에만 등록)        → instance.tf
 #       · Task Execution Role / Task Role / Deploy Role             → iam.tf
 #   - 용량(ASG·Launch Template·Capacity Provider)은 ecs-asg 모듈이 만들고,
-#     여기서는 aws_ecs_cluster_capacity_providers로 클러스터에 등록만 한다.
+#     클러스터 등록(aws_ecs_cluster_capacity_providers)은 루트 ecs.tf에서 한다.
+#     (ecs-asg가 이 모듈 출력을 받으므로, 등록까지 이 모듈에 두면 모듈 간 순환 참조가 생긴다)
 # =============================================================================
 
 data "aws_partition" "current" {}
@@ -85,27 +86,4 @@ resource "aws_ecs_cluster" "this" {
   }
 
   tags = local.tags
-}
-
-# ---------------------------------------------------------------------------
-# Capacity Provider 등록
-#   managed scaling을 켠 Capacity Provider는 클러스터 하나에만 연결된다. [D2]
-#   → ecs-asg가 만든 ASG는 구조적으로 이 스테이지를 넘을 수 없다.
-# ---------------------------------------------------------------------------
-
-resource "aws_ecs_cluster_capacity_providers" "this" {
-  count = length(var.capacity_providers) > 0 ? 1 : 0
-
-  cluster_name       = aws_ecs_cluster.this.name
-  capacity_providers = var.capacity_providers
-
-  dynamic "default_capacity_provider_strategy" {
-    for_each = var.default_capacity_provider_strategy
-
-    content {
-      capacity_provider = default_capacity_provider_strategy.value.capacity_provider
-      weight            = default_capacity_provider_strategy.value.weight
-      base              = default_capacity_provider_strategy.value.base
-    }
-  }
 }

@@ -30,53 +30,6 @@ variable "container_insights" {
 }
 
 # ---------------------------------------------------------------------------
-# Capacity Provider 연결
-#   ASG·Launch Template·Capacity Provider는 modules/ecs/ecs-asg가 만든다.
-#   이 모듈은 만들어진 Capacity Provider를 클러스터에 등록만 한다.
-# ---------------------------------------------------------------------------
-
-variable "capacity_providers" {
-  description = "클러스터에 연결할 Capacity Provider 이름 목록 (ecs-asg 모듈 출력)"
-  type        = list(string)
-  default     = []
-
-  # 한 전략 안에 ASG Capacity Provider와 Fargate Capacity Provider를 섞을 수 없다. [D1]
-  validation {
-    condition = (
-      alltrue([for cp in var.capacity_providers : contains(["FARGATE", "FARGATE_SPOT"], cp)]) ||
-      !anytrue([for cp in var.capacity_providers : contains(["FARGATE", "FARGATE_SPOT"], cp)])
-    )
-    error_message = "ASG capacity providers and FARGATE/FARGATE_SPOT must not be mixed in one cluster configuration."
-  }
-}
-
-variable "default_capacity_provider_strategy" {
-  description = <<-EOT
-    클러스터 기본 Capacity Provider 전략. 비워 두거나 general-od(dev는 shared-spot)로 둔다.
-    REST·WebSocket 서비스는 항상 서비스에서 전략을 명시한다.
-  EOT
-  type = list(object({
-    capacity_provider = string
-    weight            = optional(number, 1)
-    base              = optional(number, 0)
-  }))
-  default = []
-
-  validation {
-    condition = alltrue([
-      for s in var.default_capacity_provider_strategy : contains(var.capacity_providers, s.capacity_provider)
-    ])
-    error_message = "Every default strategy capacity_provider must be listed in capacity_providers."
-  }
-
-  # base는 전략 안의 provider 하나에만 둘 수 있다. [D3]
-  validation {
-    condition     = length([for s in var.default_capacity_provider_strategy : s if s.base > 0]) <= 1
-    error_message = "Only one capacity provider in a strategy can have a base greater than 0."
-  }
-}
-
-# ---------------------------------------------------------------------------
 # EC2 컨테이너 인스턴스 공통 (인스턴스 Role · 인스턴스 SG)
 #   스테이지당 1개를 두고 같은 스테이지의 ASG끼리 공유한다.
 # ---------------------------------------------------------------------------
