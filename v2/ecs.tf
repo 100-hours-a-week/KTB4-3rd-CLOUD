@@ -20,8 +20,17 @@ data "aws_iam_openid_connect_provider" "github" {
 }
 
 locals {
-  # ECS 서비스 Listener Rule을 붙일 리스너 (인증서가 있으면 HTTPS)
-  ecs_alb_listener_arn = var.alb_certificate_arn == null ? aws_lb_listener.http.arn : aws_lb_listener.https[0].arn
+  # ECS 서비스 Listener Rule을 붙일 리스너와 ALB SG (locals.ecs_alb_routing.<stage>.alb_key로 선택)
+  #   prod    → Prod ALB     (인증서가 있으면 HTTPS)
+  #   nonprod → Non-Prod ALB (dev·stg 공유, 인증서가 있으면 HTTPS)
+  ecs_alb_listener_arns = {
+    prod    = var.alb_certificate_arn == null ? aws_lb_listener.http.arn : aws_lb_listener.https[0].arn
+    nonprod = var.nonprod_alb_certificate_arn == null ? aws_lb_listener.nonprod_http.arn : aws_lb_listener.nonprod_https[0].arn
+  }
+  ecs_alb_security_group_ids = {
+    prod    = aws_security_group.alb.id
+    nonprod = aws_security_group.nonprod_alb.id
+  }
 
   # 스테이지 × ASG 그룹 → "prod-rest-od" 같은 키로 펼친다
   ecs_asgs = merge([
@@ -156,8 +165,8 @@ module "ecs_service" {
   deployment_maximum_percent         = each.value.deploy_max
 
   load_balancer = each.value.alb == null ? null : {
-    alb_security_group_id = aws_security_group.alb.id
-    listener_arn          = local.ecs_alb_listener_arn
+    alb_security_group_id = local.ecs_alb_security_group_ids[each.value.alb.alb_key]
+    listener_arn          = local.ecs_alb_listener_arns[each.value.alb.alb_key]
     priority              = each.value.alb.priority_base + each.value.route_order
     path_patterns         = each.value.path_patterns
     host_headers          = each.value.alb.host_headers

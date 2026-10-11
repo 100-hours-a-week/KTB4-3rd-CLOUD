@@ -301,7 +301,26 @@ variable "ecs_prod_alb_cutover" {
 }
 
 variable "ecs_alb_host_headers" {
-  description = "스테이지별 ALB host-header 라우팅 (예: { stg = [\"stg.example.com\"] }). stg에 지정하면 헤더 조건 대신 host 기반으로 라우팅한다."
-  type        = map(list(string))
-  default     = {}
+  description = <<-EOT
+    스테이지별 ALB host-header 라우팅. dev·stg는 Non-Prod ALB 하나를 공유하고 서브도메인 host로만 스테이지를 나눈다.
+    예) { dev = ["dev.moyeota.com"], stg = ["stg.moyeota.com"] }
+    ecs_container_images에 dev·stg 이미지를 지정했다면 해당 스테이지 host는 필수다.
+    prod에 지정하면 Prod ALB 규칙에 host 조건이 추가된다.
+  EOT
+  type    = map(list(string))
+  default = {}
+
+  validation {
+    condition     = alltrue([for stage in keys(var.ecs_alb_host_headers) : contains(["dev", "stg", "prod"], stage)])
+    error_message = "ecs_alb_host_headers keys must be dev, stg or prod."
+  }
+
+  # dev·stg는 Non-Prod ALB 리스너를 공유하므로 host 조건이 없으면 두 스테이지 규칙이 경로만으로 겹친다
+  validation {
+    condition = alltrue([
+      for stage in ["dev", "stg"] : length(lookup(var.ecs_alb_host_headers, stage, [])) > 0
+      if length(lookup(var.ecs_container_images, stage, {})) > 0
+    ])
+    error_message = "dev·stg ECS 서비스를 만들려면 ecs_alb_host_headers에 해당 스테이지 서브도메인(예: dev = [\"dev.moyeota.com\"])을 지정해야 한다."
+  }
 }
