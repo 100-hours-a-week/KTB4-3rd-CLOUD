@@ -103,7 +103,7 @@ locals {
   path_routes = {
     websocket = {
       priority      = 10
-      path_patterns = ["/api/wss*"]
+      path_patterns = ["/api/wss"]
       target_group  = "websocket"
     }
     rest = {
@@ -125,6 +125,9 @@ locals {
     var.websocket_port,
     var.spring_management_port,
   ])
+
+  # Non-Prod ALB(dev·stg) 인바운드 허용 CIDR = 운영자 + 개발자·QA
+  nonprod_alb_ingress_cidrs = distinct(concat(var.admin_cidrs, var.dev_qa_cidrs))
 }
 
 # -----------------------------------------------------------------------------
@@ -133,7 +136,7 @@ locals {
 #   - REST      : 1 vCPU / 1 GiB, 컨테이너 hard limit 960 MiB, -Xmx512m, 앱 8080 · 관리 8090
 #   - WebSocket : 0.5 vCPU / 1 GiB, 컨테이너 hard limit 960 MiB, heap 최대 512 MiB (잠정)
 #   - frontend · fastapi : 측정값 없음 → general-od(t3.small) 호스트당 2태스크가 들어가는 잠정값
-#   route_order : ALB Listener Rule 우선순위 오프셋 (/api/wss* 가 /api/* 보다 먼저)
+#   route_order : ALB Listener Rule 우선순위 오프셋 (/api/wss 가 /api/* 보다 먼저)
 # -----------------------------------------------------------------------------
 locals {
   ecs_service_specs = {
@@ -145,7 +148,7 @@ locals {
       container_port       = var.websocket_port
       additional_ports     = [var.spring_management_port]
       environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx512m" }
-      path_patterns        = ["/api/wss*"]
+      path_patterns        = ["/api/wss"]
       route_order          = 0
       health_check_path    = var.websocket_health_path
       health_check_port    = var.spring_management_port
@@ -219,20 +222,34 @@ locals {
     { name = "pm-peak-end", schedule = "cron(10 19 ? * MON-FRI *)", min_capacity = 2 },
   ]
 
-  # Prod/Stg ALB 라우팅
-  #   컷오버 전 : 기존 Compose Target Group 규칙(우선순위 10~30)을 그대로 두고,
-  #              ECS 규칙은 X-Moyeota-Stage 헤더가 있는 요청만 받는다 (스모크 테스트 경로)
-  #   컷오버 후 : ecs_prod_alb_cutover = true → 헤더 조건을 빼고 우선순위 1~4로 기존 규칙보다 앞선다
+  # 스테이지별 ALB 라우팅 (issues/ecs-alb-multi-target-groups.md 5.2, 8절)
+  #   alb_key : ecs.tf의 리스너·ALB SG 선택 (prod → Prod ALB, nonprod → Non-Prod ALB)
+  #
+  #   prod (Prod ALB)
+  #     컷오버 전 : 기존 Compose Target Group 규칙(우선순위 10~30)을 그대로 두고,
+  #                ECS 규칙은 X-Moyeota-Stage 헤더가 있는 요청만 받는다 (스모크 테스트 경로)
+  #     컷오버 후 : ecs_prod_alb_cutover = true → 헤더 조건을 빼고 우선순위 1~4로 기존 규칙보다 앞선다
+  #   stg·dev (Non-Prod ALB, 리스너 공유)
+  #     서브도메인 host-header(stg.moyeota.com / dev.moyeota.com)로만 스테이지를 나눈다. 우선순위 대역 stg 200~203, dev 300~303
+  #     헤더(X-Moyeota-Stage) 대체 경로는 두지 않는다 → host 미지정 시 variables.tf 검증에서 막는다
   ecs_alb_routing = {
     prod = {
+      alb_key       = "prod"
       priority_base = var.ecs_prod_alb_cutover ? 1 : 100
       host_headers  = lookup(var.ecs_alb_host_headers, "prod", [])
       http_headers  = { for k, v in { "X-Moyeota-Stage" = ["prod"] } : k => v if !var.ecs_prod_alb_cutover }
     }
     stg = {
+      alb_key       = "nonprod"
       priority_base = 200
       host_headers  = lookup(var.ecs_alb_host_headers, "stg", [])
-      http_headers  = { for k, v in { "X-Moyeota-Stage" = ["stg"] } : k => v if length(lookup(var.ecs_alb_host_headers, "stg", [])) == 0 }
+      http_headers  = {}
+    }
+    dev = {
+      alb_key       = "nonprod"
+      priority_base = 300
+      host_headers  = lookup(var.ecs_alb_host_headers, "dev", [])
+      http_headers  = {}
     }
   }
 }
@@ -246,7 +263,7 @@ locals {
 #
 #   prod : rest-od 2–3 / rest-spot 0–4 / ws-od 3–4 / general-od 1–2   (app 서브넷, 단일 AZ)
 #   stg  : prod와 같은 4개 구조, 대수만 축소                           (dev 서브넷 — stg 서브넷은 미결)
-#   dev  : shared-spot 0–2 하나를 모든 서비스가 binpack으로 공유       (dev 서브넷, ALB 없음)
+#   dev  : shared-spot 0–2 하나를 모든 서비스가 binpack으로 공유       (dev 서브넷, Non-Prod ALB)
 # -----------------------------------------------------------------------------
 locals {
   ecs_stage_settings = {
@@ -255,7 +272,7 @@ locals {
       container_insights      = "disabled"
       exec_log_retention_days = 7
       log_retention_days      = 7
-      alb                     = null # dev는 ALB 인바운드 없음 (기존 dev 정책 유지)
+      alb                     = local.ecs_alb_routing.dev # Non-Prod ALB, host 기반 (dev.moyeota.com)
       default_asg             = "shared-spot"
 
       asg_groups = {
@@ -290,7 +307,7 @@ locals {
       container_insights      = "enabled"
       exec_log_retention_days = 14
       log_retention_days      = 14
-      alb                     = local.ecs_alb_routing.stg
+      alb                     = local.ecs_alb_routing.stg # Non-Prod ALB, host 기반 (stg.moyeota.com)
       default_asg             = "general-od"
 
       asg_groups = {

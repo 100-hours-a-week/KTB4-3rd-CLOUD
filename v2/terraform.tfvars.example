@@ -61,5 +61,16 @@ ecs_container_images = {
 # true : Prod 트래픽을 ECS Service로 전환
 ecs_prod_alb_cutover = false
 
-# stg를 host 기반으로 라우팅하려면 지정 (없으면 "X-Moyeota-Stage: stg" 헤더로 라우팅)
-ecs_alb_host_headers = {}
+# 스테이지별 host 라우팅. dev·stg는 Non-Prod ALB를 공유하고 서브도메인으로만 나눈다.
+# ecs_container_images에 dev·stg 이미지를 넣으면 해당 host가 필수다 (DNS는 nonprod_alb_dns_name으로 ALIAS).
+# prod(moyeota.com)는 Prod ALB 전용이라 host 조건을 두지 않는다.
+ecs_alb_host_headers = {
+  dev = ["dev.moyeota.com"]
+  stg = ["stg.moyeota.com"]
+}
+
+# Non-Prod ALB (dev·stg). dev.moyeota.com·stg.moyeota.com을 포함하는 ACM 인증서. 없으면 HTTP 전용.
+nonprod_alb_certificate_arn = null
+# 팀·QA CIDR만 허용한다. 비워 두면 Non-Prod ALB에 아무도 접근할 수 없다.
+admin_cidrs  = []
+dev_qa_cidrs = []
