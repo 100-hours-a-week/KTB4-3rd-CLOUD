@@ -1,0 +1,232 @@
+name: BE Prod CD
+
+# main 브랜치 → Prod ECS 클러스터(moyeota-v2-prod) 승인 배포
+#   브랜치 흐름: dev → release/vX.Y.Z (Stg 검증) → main (Prod 승인 배포)
+#   1) resolve : main 머지 커밋의 원본 PR이 release/vX.Y.Z인지 확인하고,
+#                Stg CD가 남긴 stg-vX.Y.Z-<sha> 태그의 digest를 찾는다. (재빌드 금지, Stg와 동일 digest)
+#   2) deploy  : production environment 승인 후 rest·websocket에 digest를 반영한다.
+#   3) promote : 배포가 끝난 digest에 prod-vX.Y.Z-<sha> 태그를 남긴다.
+
+on:
+  workflow_run:
+    workflows:
+      - BE CI
+    types:
+      - completed
+    branches:
+      - main
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+  pull-requests: read
+
+concurrency:
+  group: backend-cd-prod
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve Stg-verified release
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      image_ref: ${{ steps.release.outputs.image_ref }}
+      image_digest: ${{ steps.release.outputs.image_digest }}
+      stg_tag: ${{ steps.release.outputs.stg_tag }}
+      promote_tag: ${{ steps.release.outputs.promote_tag }}
+      needs_promotion: ${{ steps.release.outputs.needs_promotion }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MAIN_SHA: ${{ github.event.workflow_run.head_sha }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: backend-prod-resolve-${{ github.run_id }}
+
+      - name: Resolve QA-approved source commit
+        id: source
+        run: |
+          set -Eeuo pipefail
+
+          source_sha="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/commits/${MAIN_SHA}/pulls" \
+            --jq '[.[] | select(.base.ref == "main")][0].head.sha // empty')"
+          source_branch="$(gh api \
+            -H 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/commits/${MAIN_SHA}/pulls" \
+            --jq '[.[] | select(.base.ref == "main")][0].head.ref // empty')"
+
+          if [[ -z "$source_sha" || -z "$source_branch" ]]; then
+            echo "Unable to resolve the source pull request for ${MAIN_SHA}; refusing production deployment." >&2
+            exit 1
+          fi
+
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]]
+
+          {
+            echo "source_sha=$source_sha"
+            echo "source_branch=$source_branch"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve release version and Stg-verified image
+        id: release
+        env:
+          SOURCE_SHA: ${{ steps.source.outputs.source_sha }}
+          SOURCE_BRANCH: ${{ steps.source.outputs.source_branch }}
+        run: |
+          set -Eeuo pipefail
+
+          # Prod는 Stg를 거친 release/* 만 받는다. (dev → main 직행은 Stg 검증을 건너뛰므로 거부)
+          case "$SOURCE_BRANCH" in
+            release/v*)
+              release_version="${SOURCE_BRANCH#release/}"
+              [[ "$release_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+              stg_tag="stg-${release_version}-${SOURCE_SHA:0:7}"
+              promote_tag="prod-${release_version}-${SOURCE_SHA:0:7}"
+              ;;
+            *)
+              echo "Unsupported production source branch: ${SOURCE_BRANCH} (expected release/vX.Y.Z)" >&2
+              exit 1
+              ;;
+          esac
+
+          if ! image_digest="$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$stg_tag" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text 2>/dev/null)"; then
+            echo "Stg-verified image not found: ${stg_tag}" >&2
+            echo "${SOURCE_BRANCH}@${SOURCE_SHA:0:7} has not been deployed to Stg successfully; refusing production deployment." >&2
+            exit 1
+          fi
+
+          [[ "$image_digest" == sha256:* ]]
+
+          needs_promotion=true
+          if existing_digest="$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$promote_tag" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text 2>/dev/null)"; then
+            if [[ "$existing_digest" != "$image_digest" ]]; then
+              echo "ECR tag collision: ${promote_tag}" >&2
+              echo "Expected digest: ${image_digest}" >&2
+              echo "Existing digest: ${existing_digest}" >&2
+              exit 1
+            fi
+
+            echo "ECR tag already points to the expected digest: ${promote_tag}"
+            needs_promotion=false
+          fi
+
+          {
+            echo "image_ref=${ECR_REGISTRY}/${ECR_REPOSITORY}@${image_digest}"
+            echo "image_digest=$image_digest"
+            echo "stg_tag=$stg_tag"
+            echo "promote_tag=$promote_tag"
+            echo "needs_promotion=$needs_promotion"
+          } >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy ${{ matrix.service }} (prod)
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    # production environment의 required reviewers 승인 전까지 대기한다.
+    environment:
+      name: production
+      url: https://moyeota.com
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - rest
+          - websocket
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER || 'moyeota-v2-prod' }}
+
+    steps:
+      - name: Checkout deploy action
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+          persist-credentials: false
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.ECS_DEPLOY_ROLE_ARN }}
+          role-session-name: backend-prod-cd-${{ matrix.service }}-${{ github.run_id }}
+
+      - name: Deploy to ECS
+        uses: ./.github/actions/ecs-deploy
+        with:
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: ${{ matrix.service }}
+          image: ${{ needs.resolve.outputs.image_ref }}
+          release-id: ${{ needs.resolve.outputs.promote_tag }}
+          timeout-seconds: '1800'
+
+  promote:
+    name: Promote image tag
+    needs:
+      - resolve
+      - deploy
+    if: needs.resolve.outputs.needs_promotion == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: backend-prod-promote-${{ github.run_id }}
+
+      - name: Promote image tag without rebuilding
+        env:
+          SOURCE_TAG: ${{ needs.resolve.outputs.stg_tag }}
+          PROMOTE_TAG: ${{ needs.resolve.outputs.promote_tag }}
+          IMAGE_DIGEST: ${{ needs.resolve.outputs.image_digest }}
+        run: |
+          set -Eeuo pipefail
+
+          manifest="$(aws ecr batch-get-image \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$SOURCE_TAG" \
+            --query 'images[0].imageManifest' \
+            --output text)"
+
+          test -n "$manifest"
+          test "$manifest" != None
+
+          aws ecr put-image \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-tag "$PROMOTE_TAG" \
+            --image-manifest "$manifest" >/dev/null
+
+          promoted_digest="$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$PROMOTE_TAG" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+
+          test "$promoted_digest" = "$IMAGE_DIGEST"
+          echo "Promoted ${IMAGE_DIGEST} as ${PROMOTE_TAG}"
