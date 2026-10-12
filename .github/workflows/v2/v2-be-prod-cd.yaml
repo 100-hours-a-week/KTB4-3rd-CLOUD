@@ -158,12 +158,6 @@ jobs:
       ECS_CLUSTER: ${{ vars.ECS_CLUSTER || 'moyeota-v2-prod' }}
 
     steps:
-      - name: Checkout deploy action
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout: .github/actions
-          persist-credentials: false
-
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v6.3.0
         with:
@@ -172,7 +166,7 @@ jobs:
           role-session-name: backend-prod-cd-${{ matrix.service }}-${{ github.run_id }}
 
       - name: Deploy to ECS
-        uses: ./.github/actions/ecs-deploy
+        uses: 100-hours-a-week/KTB4-3rd-CLOUD/.github/actions/ecs-deploy@main
         with:
           cluster: ${{ env.ECS_CLUSTER }}
           service: ${{ matrix.service }}

@@ -42,12 +42,6 @@ jobs:
       ECS_SERVICE: frontend
 
     steps:
-      - name: Checkout deploy action
-        uses: actions/checkout@v4
-        with:
-          sparse-checkout: .github/actions
-          persist-credentials: false
-
       - name: Download release manifest
         uses: actions/download-artifact@v4
         with:
@@ -81,7 +75,7 @@ jobs:
           role-session-name: frontend-dev-cd-${{ github.run_id }}
 
       - name: Deploy to ECS
-        uses: ./.github/actions/ecs-deploy
+        uses: 100-hours-a-week/KTB4-3rd-CLOUD/.github/actions/ecs-deploy@main
         with:
           cluster: ${{ env.ECS_CLUSTER }}
           service: ${{ env.ECS_SERVICE }}
