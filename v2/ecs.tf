@@ -53,6 +53,14 @@ locals {
         subnet_keys        = s.subnet_keys
         alb                = s.alb
         log_retention_days = s.log_retention_days
+
+        # 환경 변수 이름 → SSM 파라미터 ARN (ssm.tf). 태스크 시작 시 execution role이 읽어 주입한다.
+        secrets = merge(flatten([
+          for group in local.ecs_service_param_groups[svc] : [{
+            for key in local.ssm_param_keys[group] :
+            key => aws_ssm_parameter.app["${stage}/${group}/${key}"].arn
+          }]
+        ])...)
       })
       if contains(var.ecs_services, svc) && try(var.ecs_container_images[stage][svc], null) != null
     }
@@ -68,6 +76,7 @@ module "ecs_cluster" {
   for_each = local.ecs_stages
 
   project_name       = var.project_name
+  config_path_prefix = var.config_path_prefix
   stage              = each.key
   services           = var.ecs_services
   container_insights = each.value.container_insights
@@ -167,6 +176,7 @@ module "ecs_service" {
   container_port             = each.value.container_port
   additional_container_ports = each.value.additional_ports
   environment                = each.value.environment
+  secrets                    = each.value.secrets
   log_retention_days         = each.value.log_retention_days
 
   capacity_provider_strategy = [

@@ -1,7 +1,12 @@
 variable "project_name" {
-  description = "리소스 이름 접두어. 클러스터 이름(<project_name>-<stage>)과 설정 경로(/<project_name>/<stage>/*)에 쓰인다."
+  description = "리소스 이름 접두어. 클러스터 이름(<project_name>-<stage>)에 쓰인다."
   type        = string
   default     = "moyeota-v2"
+}
+
+variable "config_path_prefix" {
+  description = "설정 저장 경로 접두어 (앞뒤 슬래시 없이, 예: moyeota/v2). Execution Role은 /<config_path_prefix>/<stage>/* 만 읽는다."
+  type        = string
 }
 
 variable "stage" {

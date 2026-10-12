@@ -21,9 +21,9 @@ locals {
   region     = data.aws_region.current.region
   account_id = data.aws_caller_identity.current.account_id
 
-  # 스테이지별 설정 저장소 경로: /moyeota-v2/prod/* (SSM), moyeota-v2/prod/* (Secrets Manager)
-  ssm_parameter_arn = "arn:${local.partition}:ssm:${local.region}:${local.account_id}:parameter/${var.project_name}/${var.stage}/*"
-  secret_arn        = "arn:${local.partition}:secretsmanager:${local.region}:${local.account_id}:secret:${var.project_name}/${var.stage}/*"
+  # 스테이지별 설정 저장소 경로: /moyeota/v2/prod/* (SSM), moyeota/v2/prod/* (Secrets Manager)
+  ssm_parameter_arn = "arn:${local.partition}:ssm:${local.region}:${local.account_id}:parameter/${var.config_path_prefix}/${var.stage}/*"
+  secret_arn        = "arn:${local.partition}:secretsmanager:${local.region}:${local.account_id}:secret:${var.config_path_prefix}/${var.stage}/*"
 
   # 이 클러스터 안의 서비스·태스크·컨테이너 인스턴스만 가리키는 ARN 패턴
   service_arn_pattern            = "arn:${local.partition}:ecs:${local.region}:${local.account_id}:service/${local.name}/*"

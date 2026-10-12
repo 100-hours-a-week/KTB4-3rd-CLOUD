@@ -4,6 +4,22 @@ variable "project_name" {
   default     = "moyeota-v2"
 }
 
+variable "config_path_prefix" {
+  description = <<-EOT
+    앱 설정 저장 경로 접두어 (앞뒤 슬래시 없이). 서비스 버전별로 경로를 나눈다.
+      SSM             : /<config_path_prefix>/<stage>/<group>/<KEY>  예) /moyeota/v2/prod/backend/DB_PASSWORD
+      Secrets Manager :  <config_path_prefix>/<stage>/...
+    V3에서는 moyeota/v3 로 두면 V2·V3 Execution Role이 서로의 설정을 읽지 못한다.
+  EOT
+  type        = string
+  default     = "moyeota/v2"
+
+  validation {
+    condition     = can(regex("^[a-z0-9-]+(/[a-z0-9-]+)*$", var.config_path_prefix))
+    error_message = "config_path_prefix는 앞뒤 슬래시 없이 소문자·숫자·하이픈 경로여야 한다 (예: moyeota/v2)."
+  }
+}
+
 variable "aws_region" {
   description = "AWS region for V2 workload resources."
   type        = string
@@ -278,8 +294,8 @@ variable "ecs_container_images" {
     태그 대신 digest(<repo>@sha256:...)를 권장한다. 이후 revision은 CI(Deploy Role)가 등록하며 Terraform은 되돌리지 않는다.
     예) { prod = { rest = "<account>.dkr.ecr.ap-northeast-2.amazonaws.com/moyeota/be@sha256:..." } }
   EOT
-  type    = map(map(string))
-  default = {}
+  type        = map(map(string))
+  default     = {}
 
   validation {
     condition = alltrue(flatten([
@@ -296,8 +312,8 @@ variable "ecs_prod_alb_cutover" {
     false(기본): Prod ECS 규칙은 X-Moyeota-Stage: prod 헤더 요청만 받고, 기존 Compose Target Group 규칙이 실제 트래픽을 받는다.
     true       : 헤더 조건을 빼고 우선순위 1~4로 기존 규칙보다 앞서 Prod 트래픽을 ECS로 보낸다.
   EOT
-  type    = bool
-  default = false
+  type        = bool
+  default     = false
 }
 
 variable "ecs_alb_host_headers" {
@@ -307,8 +323,8 @@ variable "ecs_alb_host_headers" {
     ecs_container_images에 dev·stg 이미지를 지정했다면 해당 스테이지 host는 필수다.
     prod에 지정하면 Prod ALB 규칙에 host 조건이 추가된다.
   EOT
-  type    = map(list(string))
-  default = {}
+  type        = map(list(string))
+  default     = {}
 
   validation {
     condition     = alltrue([for stage in keys(var.ecs_alb_host_headers) : contains(["dev", "stg", "prod"], stage)])
