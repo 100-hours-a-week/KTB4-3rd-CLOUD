@@ -18,14 +18,47 @@
 locals {
   # 그룹 → 환경 변수 키. 그룹 이름이 SSM 경로의 한 단계가 된다.
   ssm_param_keys = {
+    # BE(rest·websocket 공용 이미지) — V1 env/backend.env 를 그대로 옮기고, compose가 넣던 값을 더한다.
+    #   SSM은 빈 값을 저장할 수 없다. "선택" 키를 비워 둘 거라면 이 목록에서 지운다
+    #   (남겨 두면 CHANGE_ME 문자열이 그대로 주입된다. 예: CORS origin에 CHANGE_ME).
+    #   JVM 힙 옵션은 태스크 메모리와 함께 정해야 하므로 SSM이 아니라
+    #   locals.tf ecs_service_specs.environment.JAVA_TOOL_OPTIONS 에서 관리한다 (V1 JAVA_OPTS 대체).
     backend = [
+      # Spring — V1은 compose.yaml environment 에서 고정 주입하던 값
       "SPRING_PROFILES_ACTIVE",
+      "SERVER_FORWARD_HEADERS_STRATEGY",
+
+      # DB — V1은 DB_HOST=mysql, DB_PORT=3306 을 compose.yaml 에서 고정 주입했다
       "DB_HOST",
       "DB_PORT",
       "DB_NAME",
       "DB_USERNAME",
       "DB_PASSWORD",
-      "SERVER_FORWARD_HEADERS_STRATEGY",
+
+      # 인증·암호화 (V1 값이 노출된 것으로 보고 새 값으로 교체한다)
+      "JWT_SECRET",
+      "ACCOUNT_ENC_KEY",
+      "MOYEOTA_AUTH_COOKIE_SECURE",
+      "MOYEOTA_AUTH_COOKIE_SAMESITE",
+
+      # 카카오
+      "KAKAO_CLIENT_ID",
+      "KAKAO_CLIENT_SECRET",
+      "KAKAO_REDIRECT_URI",
+      "KAKAO_ADMIN_KEY", # 선택 (application-prod.yaml 기본값 빈 값)
+
+      # 프론트 연동 (CORS·OAuth 콜백)
+      "FRONT_URL",
+      "FRONT_CALLBACK_URI",
+      "EXTRA_FRONT_ORIGINS", # 선택 (기본값 빈 값)
+
+      # 이미지 업로드
+      "S3_BUCKET",
+      "IMAGE_PUBLIC_BASE_URL", # 선택 (기본값 빈 값)
+
+      # Actuator
+      "MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE",
+      "MANAGEMENT_ENDPOINT_PROMETHEUS_ENABLED",
     ]
     frontend = [
       # NEXT_PUBLIC_* 는 빌드 시점 값이므로 여기 두지 않는다 (FE CI build-arg)
