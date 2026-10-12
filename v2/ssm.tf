@@ -124,7 +124,8 @@ locals {
     frontend = [
       "NEXT_PUBLIC_API_BASE_URL",
       "NEXT_PUBLIC_KAKAO_MAP_APP_KEY",
-      "NEXT_PUBLIC_GA_ID", # 선택값: GA를 쓰지 않으면 이 줄을 지운다 (CI는 빈 값으로 빌드)
+      "NEXT_PUBLIC_GA_ID",              # 선택값: GA를 쓰지 않으면 이 줄을 지운다 (CI는 빈 값으로 빌드)
+      "NEXT_PUBLIC_CLARITY_PROJECT_ID", # 선택값: Clarity를 쓰지 않으면 이 줄을 지운다 (CI는 빈 값으로 빌드)
       "NEXT_PUBLIC_SENTRY_DSN",
       "NEXT_PUBLIC_SENTRY_ENVIRONMENT",
       "NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE",
