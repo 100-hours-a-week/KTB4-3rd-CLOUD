@@ -20,6 +20,12 @@ variable "config_path_prefix" {
   }
 }
 
+variable "github_ci_role_name" {
+  description = "FE CI가 OIDC로 Assume하는 CI Role 이름 (V1 infra/에서 생성). 빌드 값 SSM 읽기 권한을 덧붙인다. null이면 권한을 붙이지 않는다."
+  type        = string
+  default     = "moyeota-github-ci-ecr-push"
+}
+
 variable "aws_region" {
   description = "AWS region for V2 workload resources."
   type        = string
