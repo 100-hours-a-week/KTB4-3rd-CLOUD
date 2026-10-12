@@ -56,7 +56,9 @@ infra-v2/
 
 ### Stg (`moyeota-v2-stg`, dev 서브넷)
 
-Prod와 같은 4개 ASG 구조, 대수만 축소(rest-od 1/2, rest-spot 0/2, ws-od 1/2, general-od 1/2). REST 전략은 `rest-od {base 1, weight 0}` + `rest-spot {weight 1}`로 **weight 0 배치를 검증**합니다.
+Prod와 같은 4개 ASG 구조, 대수만 축소(rest-od 1/2, rest-spot 0/2, ws-od 1/3, general-od 1/2). REST 전략은 `rest-od {base 1, weight 0}` + `rest-spot {weight 1}`로 **weight 0 배치를 검증**합니다.
+
+websocket은 Redis Pub/Sub 크로스 태스크 검증을 위해 **2태스크(min 2 / max 3, CPU 60%, scale-in 끔)** 로 둡니다. `distinctInstance` 때문에 태스크마다 ws-od 호스트가 1대씩 필요하고, 롤링 배포(min 100 / max 200) 때 새 태스크를 놓을 1대가 더 필요해 ws-od max를 3으로 둡니다.
 
 > `general-od`는 문서값 1/1 대신 **1/2**입니다. t3.small은 ENI 3개라 awsvpc 태스크가 호스트당 2개까지인데, frontend+fastapi 2개로 꽉 차면 롤링 배포(새 태스크 +1)가 배치되지 못합니다.
 
@@ -87,7 +89,8 @@ ASG 인스턴스에는 `common_tags` + `Stage` / `Role` / `Purchase` / `AmazonEC
 |---|---|---|---|
 | prod (컷오버 전, 기본) | 100–103 | 경로 + `X-Moyeota-Stage: prod` 헤더 | 실제 트래픽은 기존 Compose 규칙(10–30)이 계속 받음 |
 | prod (`ecs_prod_alb_cutover = true`) | 1–4 | 경로만 | 기존 규칙보다 앞서 ECS로 전환 |
-| stg | 200–203 | 경로 + `X-Moyeota-Stage: stg` 헤더 (또는 `ecs_alb_host_headers.stg`) | |
+| stg | 200–203 | 경로 + host `stg.moyeota.com` (Non-Prod ALB) | |
+| dev | 300–303 | 경로 + host `dev.moyeota.com` (Non-Prod ALB) | |
 
 ```bash
 # 컷오버 전 Prod ECS 스모크 테스트
@@ -97,7 +100,7 @@ curl -H 'X-Moyeota-Stage: prod' http://<alb_dns_name>/api/health
 ## 적용 순서
 
 ```bash
-cd infra-v2
+cd v2
 terraform init        # modules/ecs/ecs-cluster, ecs-asg, ecs-service 등록
 terraform fmt -recursive
 terraform validate
@@ -113,7 +116,10 @@ terraform apply v2-ecs.tfplan
 ## 적용 후 검증 (issues/ecs-asg-by-cluster-service.md 8절)
 
 - [ ] (Stg) rest desired 1 → 2: 첫 태스크는 `rest-od`, 두 번째는 `rest-spot`에만 뜨는지. 안 되면 `rest-od {base, weight 1}` + `rest-spot {weight 4}`로 전환
-- [ ] `rest-spot` 인스턴스에 AWS FIS Spot 중단 → `DRAINING` 후 대체 태스크가 다른 인스턴스에 뜨는지
+- [ ] `rest-spot` 인스턴스에 AWS FIS Spot 중단(`fis_experiment_template_ids.stg.rest_spot_interruption`) → `DRAINING` 후 대체 태스크가 다른 인스턴스에 뜨는지
+- [ ] (Stg) websocket 2태스크가 서로 다른 ws-od 호스트에 뜨고, 한 태스크에 붙은 클라이언트의 메시지가 다른 태스크의 클라이언트에 도달하는지 (Redis Pub/Sub)
+- [ ] FIS `websocket_task_stop` → 대체 태스크 RUNNING·ALB healthy까지 시간, 그 사이 publish된 메시지 유실 여부
+- [ ] FIS `container_instance_drain` → 재배치 중 Capacity Provider가 인스턴스를 늘리는지
 - [ ] websocket 태스크가 `ws-od` 외 호스트에 배치되지 않는지 (`memberOf`)
 - [ ] dev 인스턴스 Role로 prod 클러스터 `RegisterContainerInstance`가 `implicitDeny`인지
 - [ ] 태스크 컨테이너에서 `169.254.169.254` 호출이 막히는지 (`ECS_AWSVPC_BLOCK_IMDS`)
@@ -143,8 +149,8 @@ aws iam simulate-principal-policy \
 | Stg·Prod Blue/Green 배포 | 모든 스테이지 롤링(min 100 / max 200, dev 0 / 100) + circuit breaker | ECS 네이티브 Blue/Green(대체 Target Group, 테스트 리스너) 추가. Blue/Green 서비스는 `ALBRequestCountPerTarget` 스케일링 불가 |
 | WebSocket 동적 지표 | CPU 60% + scale-in 끔 | 앱이 STOMP 세션 수를 발행하면 `autoscaling.custom_metric`으로 교체 (모듈은 지원) |
 | Stg 서브넷 | dev 서브넷 공유 | `stg-a`(예: 10.20.42.0/24)와 NAT 경로 결정 |
-| Service Connect | 클러스터 기본 네임스페이스만 생성, 서비스는 미등록 | FastAPI 외부 노출 여부 결정 후 `service_connect_configuration` 추가 |
-| 데이터 계층 SG | 없음 | MySQL·Redis SG에서 `ecs_services["<stage>-rest"/"-websocket"].task_security_group_id`만 허용 |
+| Service Connect | 모듈 지원(`service_connect`), 기본 off. `ecs_service_connect_stages`에 넣으면 fastapi 서버 / rest·websocket 클라이언트 | 앱의 FastAPI 호출 URL을 `http://fastapi:8000`으로 바꾼 뒤 스테이지별로 켠다 |
+| 데이터 계층 SG | stg ElastiCache Redis SG·dev EC2 SG(3306/6379)가 rest·websocket 태스크 SG만 허용 (`redis.tf`) | RDS SG 추가 |
 | 앱 설정·시크릿 | `JAVA_TOOL_OPTIONS`만 | `/moyeota-v2/<stage>/<service>/*` SSM·Secrets ARN을 `secrets`로 주입 |
 | WebSocket 인스턴스 타입 | ECS는 t3.small (문서), Compose 호스트 변수는 t3.medium | 하나로 통일 |
 | ALB 2-AZ 대상 요건 | 단일 AZ(app-a) 태스크만 | `app-c`에 최소 대상을 둘지 결정 |

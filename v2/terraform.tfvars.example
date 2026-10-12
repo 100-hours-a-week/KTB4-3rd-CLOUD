@@ -38,7 +38,9 @@ spring_management_port   = 8090
 alb_idle_timeout_seconds = 300
 
 # ECS (ecs.tf)
-ecs_stages              = ["dev", "stg", "prod"]
+# 스테이지마다 ASG min_size만큼 인스턴스가 서비스 없이도 뜬다 (prod: rest-od 2 + ws-od 3 + general-od 1).
+# dev·stg 스케줄링 테스트 기간에는 prod를 빼 둔다.
+ecs_stages              = ["dev", "stg"]
 ecs_services            = ["rest", "websocket", "frontend", "fastapi"]
 github_org              = "100-hours-a-week"
 github_cloud_repository = "KTB4-3rd-CLOUD"
@@ -74,3 +76,26 @@ nonprod_alb_certificate_arn = null
 # 팀·QA CIDR만 허용한다. 비워 두면 Non-Prod ALB에 아무도 접근할 수 없다.
 admin_cidrs  = []
 dev_qa_cidrs = []
+
+# --- 데이터 계층 (redis.tf) -------------------------------------------------
+# stg Redis Pub/Sub 테스트 때만 ["stg"], 끝나면 []로 내린다. dev는 dev EC2 compose Redis를 쓴다.
+elasticache_redis_stages = ["stg"]
+# dev rest·websocket 태스크 → dev EC2(compose MySQL·Redis). compose에서 포트를 호스트로 publish해야 한다.
+dev_data_ports = [3306, 6379]
+
+# --- Non-Prod DNS·인증서 (dns.tf) -------------------------------------------
+route53_zone_name = "moyeota.com"
+# V1이 쓰는 dev.moyeota.com은 넣지 않는다 (기존 레코드와 충돌). 넘겨받을 때 import 후 추가.
+nonprod_dns_records = ["stg.moyeota.com"]
+# dev·stg SAN 인증서를 만들어 Non-Prod HTTPS 리스너에 붙인다 (wss:// 테스트). nonprod_alb_certificate_arn을 주면 그 값이 우선.
+nonprod_acm_certificate_create = true
+
+# --- CD (Deploy Role OIDC) ---------------------------------------------------
+# CD가 도는 앱 레포. GitHub에 표시되는 이름 그대로 (OIDC sub는 대소문자 구분)
+github_app_repositories = ["KTB4-3rd-BE", "KTB4-3rd-FE"]
+
+# --- Service Connect · FIS ---------------------------------------------------
+# rest·websocket → http://fastapi:8000. 켜면 해당 스테이지 서비스가 새 배포된다.
+ecs_service_connect_stages = []
+# 장애 주입 실험 템플릿 (실행 전까지 영향 없음). prod는 지정 불가.
+fis_stages = ["stg"]

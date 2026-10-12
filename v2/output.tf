@@ -106,3 +106,29 @@ output "ecs_services" {
     }
   }
 }
+
+output "redis_endpoints" {
+  description = "스테이지별 ElastiCache Redis 엔드포인트 → SSM SPRING_DATA_REDIS_HOST 값"
+  value = {
+    for stage, rg in aws_elasticache_replication_group.redis : stage => {
+      host = rg.primary_endpoint_address
+      port = rg.port
+    }
+  }
+}
+
+output "nonprod_certificate_arn" {
+  description = "Non-Prod ALB HTTPS 리스너에 붙은 인증서 (null이면 HTTP 전용)"
+  value       = local.nonprod_certificate_arn
+}
+
+output "fis_experiment_template_ids" {
+  description = "스테이지별 FIS 실험 템플릿 ID → aws fis start-experiment --experiment-template-id <id>"
+  value = {
+    for stage in local.fis_stages : stage => {
+      websocket_task_stop      = aws_fis_experiment_template.websocket_task_stop[stage].id
+      rest_spot_interruption   = aws_fis_experiment_template.rest_spot_interruption[stage].id
+      container_instance_drain = aws_fis_experiment_template.container_instance_drain[stage].id
+    }
+  }
+}

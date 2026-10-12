@@ -158,10 +158,10 @@ resource "aws_lb_listener" "nonprod_http" {
   protocol          = "HTTP"
 
   default_action {
-    type = var.nonprod_alb_certificate_arn == null ? "fixed-response" : "redirect"
+    type = local.nonprod_tls_enabled ? "redirect" : "fixed-response"
 
     dynamic "fixed_response" {
-      for_each = var.nonprod_alb_certificate_arn == null ? [true] : []
+      for_each = local.nonprod_tls_enabled ? [] : [true]
 
       content {
         content_type = "text/plain"
@@ -171,7 +171,7 @@ resource "aws_lb_listener" "nonprod_http" {
     }
 
     dynamic "redirect" {
-      for_each = var.nonprod_alb_certificate_arn == null ? [] : [true]
+      for_each = local.nonprod_tls_enabled ? [true] : []
 
       content {
         port        = "443"
@@ -183,12 +183,12 @@ resource "aws_lb_listener" "nonprod_http" {
 }
 
 resource "aws_lb_listener" "nonprod_https" {
-  count = var.nonprod_alb_certificate_arn == null ? 0 : 1
+  count = local.nonprod_tls_enabled ? 1 : 0
 
   load_balancer_arn = aws_lb.nonprod.arn
   port              = 443
   protocol          = "HTTPS"
-  certificate_arn   = var.nonprod_alb_certificate_arn
+  certificate_arn   = local.nonprod_certificate_arn
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
 
   default_action {

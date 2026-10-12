@@ -25,7 +25,7 @@ locals {
   #   nonprod → Non-Prod ALB (dev·stg 공유, 인증서가 있으면 HTTPS)
   ecs_alb_listener_arns = {
     prod    = var.alb_certificate_arn == null ? aws_lb_listener.http.arn : aws_lb_listener.https[0].arn
-    nonprod = var.nonprod_alb_certificate_arn == null ? aws_lb_listener.nonprod_http.arn : aws_lb_listener.nonprod_https[0].arn
+    nonprod = local.nonprod_tls_enabled ? aws_lb_listener.nonprod_https[0].arn : aws_lb_listener.nonprod_http.arn
   }
   ecs_alb_security_group_ids = {
     prod    = aws_security_group.alb.id
@@ -85,9 +85,11 @@ module "ecs_cluster" {
   enable_execute_command  = true
   exec_log_retention_days = each.value.exec_log_retention_days
 
+  # CD는 BE·FE 레포에서 workflow_run(BE CI / FE CI)으로 돈다 → 앱 레포의 같은 이름 environment만 허용
   github_oidc_provider_arn = data.aws_iam_openid_connect_provider.github.arn
   github_oidc_subjects = [
-    "repo:${var.github_org}/${var.github_cloud_repository}:environment:${each.key}",
+    for repo in distinct(concat([var.github_cloud_repository], var.github_app_repositories)) :
+    "repo:${var.github_org}/${repo}:environment:${each.key}"
   ]
 }
 
@@ -207,6 +209,53 @@ module "ecs_service" {
   }
 
   autoscaling = each.value.autoscaling
+
+  service_connect = (
+    contains(var.ecs_service_connect_stages, each.value.stage) &&
+    lookup(local.ecs_service_connect_roles, each.value.service, null) != null
+    ) ? {
+    namespace_arn = module.ecs_cluster[each.value.stage].service_connect_namespace_arn
+    server        = lookup(local.ecs_service_connect_roles, each.value.service, "") == "server"
+  } : null
+}
+
+# -----------------------------------------------------------------------------
+# 3-1) Service Connect (ecs_service_connect_stages에 넣은 스테이지만)
+#   rest·websocket → http://fastapi:<fastapi_port> (서버는 fastapi 하나)
+#   ALB 경로(/ocr/*)는 그대로 두고, 서비스 간 동기 호출만 Service Connect로 보낸다.
+#   프록시는 클라이언트 태스크에서 서버 태스크 ENI로 직접 붙으므로 fastapi 태스크 SG에 클라이언트 태스크 SG를 연다.
+# -----------------------------------------------------------------------------
+
+locals {
+  ecs_service_connect_roles = {
+    rest      = "client"
+    websocket = "client"
+    fastapi   = "server"
+  }
+
+  # "stg-rest" → fastapi 태스크 SG에 열어 줄 클라이언트 태스크 SG (같은 스테이지 fastapi가 있을 때만)
+  ecs_service_connect_ingress = {
+    for k, s in local.ecs_service_instances : k => {
+      server_sg_id = module.ecs_service["${s.stage}-fastapi"].task_security_group_id
+      client_sg_id = module.ecs_service[k].task_security_group_id
+    }
+    if(
+      contains(var.ecs_service_connect_stages, s.stage) &&
+      lookup(local.ecs_service_connect_roles, s.service, null) == "client" &&
+      contains(keys(local.ecs_service_instances), "${s.stage}-fastapi")
+    )
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "service_connect_fastapi" {
+  for_each = local.ecs_service_connect_ingress
+
+  security_group_id            = each.value.server_sg_id
+  description                  = "Service Connect from ${each.key} tasks"
+  referenced_security_group_id = each.value.client_sg_id
+  ip_protocol                  = "tcp"
+  from_port                    = var.fastapi_port
+  to_port                      = var.fastapi_port
 }
 
 # Prod ECS Exec는 운영자 그룹에만 허용
