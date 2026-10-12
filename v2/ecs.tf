@@ -54,13 +54,18 @@ locals {
         alb                = s.alb
         log_retention_days = s.log_retention_days
 
-        # 환경 변수 이름 → SSM 파라미터 ARN (ssm.tf). 태스크 시작 시 execution role이 읽어 주입한다.
-        secrets = merge(flatten([
-          for group in local.ecs_service_param_groups[svc] : [{
-            for key in local.ssm_param_keys[group] :
-            key => aws_ssm_parameter.app["${stage}/${group}/${key}"].arn
-          }]
-        ])...)
+        # 환경 변수 이름 → SSM 파라미터 ARN. 태스크 시작 시 execution role이 읽어 주입한다.
+        #   ssm.tf    : 앱 설정 (값은 콘솔에서 입력)
+        #   broker.tf : 채팅 브로커 연결 값 REDIS_HOST·REDIS_PORT·CHAT_FANOUT_CHANNEL (rest·websocket만, Terraform이 값 관리)
+        secrets = merge(
+          merge(flatten([
+            for group in local.ecs_service_param_groups[svc] : [{
+              for key in local.ssm_param_keys[group] :
+              key => aws_ssm_parameter.app["${stage}/${group}/${key}"].arn
+            }]
+          ])...),
+          { for key, arn in try(local.broker_secrets[stage], {}) : key => arn if contains(local.data_client_services, svc) },
+        )
       })
       if contains(var.ecs_services, svc) && try(var.ecs_container_images[stage][svc], null) != null
     }

@@ -120,6 +120,20 @@ terraform apply v2-ecs.tfplan
 - [ ] (Stg) websocket 2태스크가 서로 다른 ws-od 호스트에 뜨고, 한 태스크에 붙은 클라이언트의 메시지가 다른 태스크의 클라이언트에 도달하는지 (Redis Pub/Sub)
 - [ ] FIS `websocket_task_stop` → 대체 태스크 RUNNING·ALB healthy까지 시간, 그 사이 publish된 메시지 유실 여부
 - [ ] FIS `container_instance_drain` → 재배치 중 Capacity Provider가 인스턴스를 늘리는지
+- [ ] (Stg 브로커) 채널 구독자 수(`PUBSUB NUMSUB moyeota:stg:chat:fanout:v1`) = websocket 태스크 수. BE 이미지에는 redis-cli가 없으므로 listener 구독 성공 로그(태스크 ID 포함)나 CloudWatch `CurrConnections`로 확인
+- [ ] (Stg 브로커) REST에서 만든 시스템 메시지(택시팟 참여 등)가 모든 websocket 태스크의 구독자에게 도달하는지
+- [ ] (Stg 브로커 장애) Redis 노드 재시작 → listener 재구독, 재시작 중 메시지는 이력 API로 복구되는지, 저장 성공 응답이 Redis 실패로 바뀌지 않는지
+
+```bash
+# Redis 전체 장애 시나리오 (stg 단일 노드 재시작)
+aws elasticache reboot-cache-cluster \
+  --cache-cluster-id moyeota-v2-stg-redis-001 --cache-node-ids-to-reboot 0001
+
+# 재시작 전후 연결 수 (구독 연결 재수립 확인)
+aws cloudwatch get-metric-statistics --namespace AWS/ElastiCache --metric-name CurrConnections \
+  --dimensions Name=CacheClusterId,Value=moyeota-v2-stg-redis-001 \
+  --start-time $(date -u -v-30M +%FT%TZ) --end-time $(date -u +%FT%TZ) --period 60 --statistics Maximum
+```
 - [ ] websocket 태스크가 `ws-od` 외 호스트에 배치되지 않는지 (`memberOf`)
 - [ ] dev 인스턴스 Role로 prod 클러스터 `RegisterContainerInstance`가 `implicitDeny`인지
 - [ ] 태스크 컨테이너에서 `169.254.169.254` 호출이 막히는지 (`ECS_AWSVPC_BLOCK_IMDS`)
@@ -150,7 +164,8 @@ aws iam simulate-principal-policy \
 | WebSocket 동적 지표 | CPU 60% + scale-in 끔 | 앱이 STOMP 세션 수를 발행하면 `autoscaling.custom_metric`으로 교체 (모듈은 지원) |
 | Stg 서브넷 | dev 서브넷 공유 | `stg-a`(예: 10.20.42.0/24)와 NAT 경로 결정 |
 | Service Connect | 모듈 지원(`service_connect`), 기본 off. `ecs_service_connect_stages`에 넣으면 fastapi 서버 / rest·websocket 클라이언트 | 앱의 FastAPI 호출 URL을 `http://fastapi:8000`으로 바꾼 뒤 스테이지별로 켠다 |
-| 데이터 계층 SG | stg ElastiCache Redis SG·dev EC2 SG(3306/6379)가 rest·websocket 태스크 SG만 허용 (`redis.tf`) | RDS SG 추가 |
+| 데이터 계층 SG | 브로커 Redis SG(stg·prod)·dev EC2 SG(3306/6379)가 rest·websocket 태스크 SG만 허용 (`broker.tf`) | RDS SG 추가 |
+| 채팅 브로커 | `broker.tf`: Redis Pub/Sub(dev compose / stg 단일 / prod replica 1), 연결 값 SSM 자동 주입, 노드 알람 | BE fan-out 어댑터(발행·listener)와 `APP_ROLE` 조건부 등록 구현 후 stg 검증 |
 | 앱 설정·시크릿 | `JAVA_TOOL_OPTIONS`만 | `/moyeota-v2/<stage>/<service>/*` SSM·Secrets ARN을 `secrets`로 주입 |
 | WebSocket 인스턴스 타입 | ECS는 t3.small (문서), Compose 호스트 변수는 t3.medium | 하나로 통일 |
 | ALB 2-AZ 대상 요건 | 단일 AZ(app-a) 태스크만 | `app-c`에 최소 대상을 둘지 결정 |

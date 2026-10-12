@@ -137,6 +137,9 @@ locals {
 #   - WebSocket : 0.5 vCPU / 1 GiB, 컨테이너 hard limit 960 MiB, heap 최대 512 MiB (잠정)
 #   - frontend · fastapi : 측정값 없음 → general-od(t3.small) 호스트당 2태스크가 들어가는 잠정값
 #   route_order : ALB Listener Rule 우선순위 오프셋 (/api/wss 가 /api/* 보다 먼저)
+#   APP_ROLE    : 같은 BE 이미지를 rest·websocket 두 서비스로 띄우므로 실행 역할을 알린다.
+#                 BE가 이 값으로 REST 컨트롤러·STOMP endpoint·Redis listener를 조건부 등록해야 실제 자원이 분리된다
+#                 (wiki「V2 WebSocket 메시지 버스와 Redis 도입 설계」— Spring profile/조건부 설정으로 경계)
 # -----------------------------------------------------------------------------
 locals {
   ecs_service_specs = {
@@ -147,7 +150,7 @@ locals {
       container_memory     = 960
       container_port       = var.websocket_port
       additional_ports     = [var.spring_management_port]
-      environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx512m" }
+      environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx512m", APP_ROLE = "websocket" }
       path_patterns        = ["/api/wss"]
       route_order          = 0
       health_check_path    = var.websocket_health_path
@@ -161,7 +164,7 @@ locals {
       container_memory     = 960
       container_port       = var.rest_port
       additional_ports     = [var.spring_management_port]
-      environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx512m" }
+      environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx512m", APP_ROLE = "rest" }
       path_patterns        = ["/api/*"]
       route_order          = 1
       health_check_path    = var.rest_health_path

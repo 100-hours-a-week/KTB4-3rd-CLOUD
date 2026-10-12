@@ -77,9 +77,14 @@ nonprod_alb_certificate_arn = null
 admin_cidrs  = []
 dev_qa_cidrs = []
 
-# --- 데이터 계층 (redis.tf) -------------------------------------------------
-# stg Redis Pub/Sub 테스트 때만 ["stg"], 끝나면 []로 내린다. dev는 dev EC2 compose Redis를 쓴다.
+# --- 채팅 브로커 (broker.tf) -------------------------------------------------
+# ElastiCache Redis를 만들 스테이지. stg는 테스트 때만 넣고 끝나면 뺀다. prod는 replica 1 + 자동 장애 조치.
+# dev는 dev EC2 compose Redis(dev_redis_port)를 쓴다.
+# rest·websocket 태스크에는 REDIS_HOST·REDIS_PORT·CHAT_FANOUT_CHANNEL이 SSM(/moyeota/v2/<stage>/broker/*)으로 자동 주입된다.
 elasticache_redis_stages = ["stg"]
+dev_redis_port           = 6379
+# 브로커 알람 알림 (없으면 null — 알람 상태만 남는다)
+alarm_sns_topic_arn = null
 # dev rest·websocket 태스크 → dev EC2(compose MySQL·Redis). compose에서 포트를 호스트로 publish해야 한다.
 dev_data_ports = [3306, 6379]
 

@@ -348,11 +348,11 @@ variable "ecs_alb_host_headers" {
 }
 
 # -----------------------------------------------------------------------------
-# 데이터 계층 (redis.tf)
+# 채팅 브로커·데이터 계층 (broker.tf)
 # -----------------------------------------------------------------------------
 
 variable "elasticache_redis_stages" {
-  description = "ElastiCache for Redis를 만들 스테이지. stg는 QA·스케줄링 테스트 때만 [\"stg\"]로 올리고 끝나면 []로 내린다. dev는 dev EC2 compose Redis를 쓴다."
+  description = "채팅 브로커 ElastiCache Redis를 만들 스테이지. stg는 QA·스케줄링 테스트 때만 넣고 끝나면 뺀다. prod는 replica 1 + 자동 장애 조치(broker.tf). dev는 dev EC2 compose Redis를 쓴다."
   type        = list(string)
   default     = []
 
@@ -388,6 +388,25 @@ variable "redis_transit_encryption_enabled" {
   description = "전송 구간 TLS. true로 바꾸면 BE에 SPRING_DATA_REDIS_SSL_ENABLED=true가 필요하다 (변경 시 클러스터 교체)."
   type        = bool
   default     = false
+}
+
+variable "dev_redis_port" {
+  description = "dev EC2 compose Redis가 호스트에 publish한 포트 (dev 브로커 REDIS_PORT 값)"
+  type        = number
+  default     = 6379
+}
+
+variable "chat_fanout_schema_version" {
+  description = "채팅 fan-out 이벤트 계약 버전. 채널 이름 moyeota:<stage>:chat:fanout:v<버전>에 들어간다. 계약을 깨는 변경 때만 올린다."
+  type        = number
+  default     = 1
+}
+
+variable "alarm_sns_topic_arn" {
+  description = "브로커 CloudWatch 알람을 보낼 SNS 토픽. null이면 알람 상태만 남는다."
+  type        = string
+  default     = null
+  nullable    = true
 }
 
 variable "dev_data_ports" {

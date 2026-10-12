@@ -107,14 +107,14 @@ output "ecs_services" {
   }
 }
 
-output "redis_endpoints" {
-  description = "스테이지별 ElastiCache Redis 엔드포인트 → SSM SPRING_DATA_REDIS_HOST 값"
-  value = {
-    for stage, rg in aws_elasticache_replication_group.redis : stage => {
-      host = rg.primary_endpoint_address
-      port = rg.port
-    }
-  }
+output "broker_endpoints" {
+  description = "스테이지별 채팅 브로커(Redis) 엔드포인트. rest·websocket에는 SSM /<prefix>/<stage>/broker/*로 자동 주입된다."
+  value       = local.broker_endpoints
+}
+
+output "broker_ssm_parameters" {
+  description = "Terraform이 관리하는 브로커 연결 SSM 파라미터 이름"
+  value       = { for k, p in aws_ssm_parameter.broker : k => p.name }
 }
 
 output "nonprod_certificate_arn" {
