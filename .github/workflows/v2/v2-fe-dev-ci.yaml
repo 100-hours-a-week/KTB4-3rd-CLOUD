@@ -203,6 +203,7 @@ jobs:
           # SSM은 빈 값을 저장할 수 없다. 선택값은 파라미터가 없으면 빈 값으로 빌드한다.
           optional=(
             NEXT_PUBLIC_GA_ID
+            NEXT_PUBLIC_CLARITY_PROJECT_ID
           )
 
           out="$(aws ssm get-parameters --with-decryption \
@@ -249,6 +250,7 @@ jobs:
             echo "NEXT_PUBLIC_API_BASE_URL=/api"
             echo "NEXT_PUBLIC_KAKAO_MAP_APP_KEY=ci-placeholder"
             echo "NEXT_PUBLIC_GA_ID="
+            echo "NEXT_PUBLIC_CLARITY_PROJECT_ID="
             echo "NEXT_PUBLIC_SENTRY_DSN="
             echo "NEXT_PUBLIC_SENTRY_ENVIRONMENT=ci"
             echo "NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=0"
@@ -272,6 +274,7 @@ jobs:
             --build-arg "NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}" \
             --build-arg "NEXT_PUBLIC_KAKAO_MAP_APP_KEY=${NEXT_PUBLIC_KAKAO_MAP_APP_KEY}" \
             --build-arg "NEXT_PUBLIC_GA_ID=${NEXT_PUBLIC_GA_ID}" \
+            --build-arg "NEXT_PUBLIC_CLARITY_PROJECT_ID=${NEXT_PUBLIC_CLARITY_PROJECT_ID}" \
             --build-arg "NEXT_PUBLIC_SENTRY_DSN=${NEXT_PUBLIC_SENTRY_DSN}" \
             --build-arg "NEXT_PUBLIC_SENTRY_ENVIRONMENT=${NEXT_PUBLIC_SENTRY_ENVIRONMENT}" \
             --build-arg "NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE=${NEXT_PUBLIC_SENTRY_TRACES_SAMPLE_RATE}" \
