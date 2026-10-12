@@ -32,7 +32,7 @@ variable "cluster_arn" {
 }
 
 variable "execution_role_arn" {
-  description = "스테이지 Task Execution Role (/<project>/<stage>/* 설정만 읽기 가능)"
+  description = "스테이지 Task Execution Role (/<config_path_prefix>/<stage>/* 설정만 읽기 가능)"
   type        = string
 }
 
@@ -103,7 +103,7 @@ variable "environment" {
 }
 
 variable "secrets" {
-  description = "환경 변수 이름 → SSM/Secrets Manager ARN. 반드시 자기 스테이지 경로(/<project>/<stage>/*)만 넣는다."
+  description = "환경 변수 이름 → SSM/Secrets Manager ARN. 반드시 자기 스테이지 경로(/<config_path_prefix>/<stage>/*)만 넣는다."
   type        = map(string)
   default     = {}
 }

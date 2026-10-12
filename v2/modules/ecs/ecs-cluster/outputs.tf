@@ -41,7 +41,7 @@ output "exec_operator_policy_arn" {
 
 output "config_path_prefix" {
   description = "이 스테이지 설정을 저장할 Parameter Store / Secrets Manager 경로 접두어"
-  value       = "/${var.project_name}/${var.stage}/"
+  value       = "/${var.config_path_prefix}/${var.stage}/"
 }
 
 output "instance_profile_arn" {
