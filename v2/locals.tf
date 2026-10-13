@@ -137,6 +137,9 @@ locals {
 #   - WebSocket : 0.5 vCPU / 1 GiB, 컨테이너 hard limit 960 MiB, heap 최대 512 MiB (잠정)
 #   - frontend · fastapi : 측정값 없음 → general-od(t3.small) 호스트당 2태스크가 들어가는 잠정값
 #   route_order : ALB Listener Rule 우선순위 오프셋 (/api/wss 가 /api/* 보다 먼저)
+#   APP_ROLE    : 같은 BE 이미지를 rest·websocket 두 서비스로 띄우므로 실행 역할을 알린다.
+#                 BE가 이 값으로 REST 컨트롤러·STOMP endpoint·Redis listener를 조건부 등록해야 실제 자원이 분리된다
+#                 (wiki「V2 WebSocket 메시지 버스와 Redis 도입 설계」— Spring profile/조건부 설정으로 경계)
 # -----------------------------------------------------------------------------
 locals {
   ecs_service_specs = {
@@ -147,11 +150,12 @@ locals {
       container_memory     = 960
       container_port       = var.websocket_port
       additional_ports     = [var.spring_management_port]
-      environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx512m" }
+      environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx512m", APP_ROLE = "websocket" }
       path_patterns        = ["/api/wss"]
       route_order          = 0
       health_check_path    = var.websocket_health_path
       health_check_port    = var.spring_management_port
+      health_check_matcher = var.spring_health_matcher
       deregistration_delay = 120 # 장기 연결 드레이닝
     }
     rest = {
@@ -161,11 +165,12 @@ locals {
       container_memory     = 960
       container_port       = var.rest_port
       additional_ports     = [var.spring_management_port]
-      environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx512m" }
+      environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx512m", APP_ROLE = "rest" }
       path_patterns        = ["/api/*"]
       route_order          = 1
       health_check_path    = var.rest_health_path
       health_check_port    = var.spring_management_port
+      health_check_matcher = var.spring_health_matcher
       deregistration_delay = 30 # Spot 2분 알림 안에 끝나도록
     }
     fastapi = {
@@ -180,6 +185,7 @@ locals {
       route_order          = 2
       health_check_path    = var.fastapi_health_path
       health_check_port    = null
+      health_check_matcher = "200-399"
       deregistration_delay = 30
     }
     frontend = {
@@ -194,6 +200,7 @@ locals {
       route_order          = 3
       health_check_path    = var.frontend_health_path
       health_check_port    = null
+      health_check_matcher = "200-399"
       deregistration_delay = 30
     }
   }
@@ -262,7 +269,7 @@ locals {
 #   services   : strategy[].asg는 같은 스테이지 asg_groups 키
 #
 #   prod : rest-od 2–3 / rest-spot 0–4 / ws-od 3–4 / general-od 1–2   (app 서브넷, 단일 AZ)
-#   stg  : prod와 같은 4개 구조, 대수만 축소                           (dev 서브넷 — stg 서브넷은 미결)
+#   stg  : prod와 같은 4개 구조, 대수만 축소 (ws-od 1–3, websocket 2태스크) (dev 서브넷 — stg 서브넷은 미결)
 #   dev  : shared-spot 0–2 하나를 모든 서비스가 binpack으로 공유       (dev 서브넷, Non-Prod ALB)
 # -----------------------------------------------------------------------------
 locals {
@@ -327,13 +334,15 @@ locals {
           min                   = 0
           max                   = 2
         }
+        # websocket 2태스크(distinctInstance) + 롤링 배포 1대 → max 3
+        #   max 2이면 기존 2태스크가 호스트 2대를 차지해 새 태스크를 놓을 곳이 없어 배포가 멈춘다 (min 100 / max 200)
         ws-od = {
           role                  = "ws"
           purchase              = "od"
           instance_types        = ["t3.small"]
           instance_requirements = null
           min                   = 1
-          max                   = 2
+          max                   = 3
         }
         # 문서값은 1/1이지만 frontend+fastapi 2태스크로 호스트 ENI가 차서 롤링 배포(+1 태스크)가 막힌다 → max 2
         general-od = {
@@ -366,15 +375,23 @@ locals {
             scheduled    = []
           }
         }
+        # Redis Pub/Sub 크로스 태스크 검증: 최소 2태스크를 서로 다른 호스트에 둔다.
+        # prod와 같은 정책(scale-in 금지)을 stg에서 먼저 확인한다.
         websocket = {
           strategy             = [{ asg = "ws-od", base = 1, weight = 1 }]
           placement_role       = "ws"
           distinct_instance    = true
           placement_strategies = []
-          desired              = 1
+          desired              = 2
           deploy_min           = 100
           deploy_max           = 200
-          autoscaling          = null
+          autoscaling = {
+            min_capacity     = 2
+            max_capacity     = 3
+            cpu_target       = 60
+            disable_scale_in = true
+            scheduled        = []
+          }
         }
         frontend = {
           strategy             = [{ asg = "general-od", base = 1, weight = 1 }]

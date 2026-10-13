@@ -106,3 +106,29 @@ output "ecs_services" {
     }
   }
 }
+
+output "broker_endpoints" {
+  description = "스테이지별 채팅 브로커(Redis) 엔드포인트. rest·websocket에는 SSM /<prefix>/<stage>/broker/*로 자동 주입된다."
+  value       = local.broker_endpoints
+}
+
+output "broker_ssm_parameters" {
+  description = "Terraform이 관리하는 브로커 연결 SSM 파라미터 이름"
+  value       = { for k, p in aws_ssm_parameter.broker : k => p.name }
+}
+
+output "nonprod_certificate_arn" {
+  description = "Non-Prod ALB HTTPS 리스너에 붙은 인증서 (null이면 HTTP 전용)"
+  value       = local.nonprod_certificate_arn
+}
+
+output "fis_experiment_template_ids" {
+  description = "스테이지별 FIS 실험 템플릿 ID → aws fis start-experiment --experiment-template-id <id>"
+  value = {
+    for stage in local.fis_stages : stage => {
+      websocket_task_stop      = aws_fis_experiment_template.websocket_task_stop[stage].id
+      rest_spot_interruption   = aws_fis_experiment_template.rest_spot_interruption[stage].id
+      container_instance_drain = aws_fis_experiment_template.container_instance_drain[stage].id
+    }
+  }
+}

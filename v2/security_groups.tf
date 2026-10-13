@@ -68,7 +68,7 @@ resource "aws_security_group" "alb" {
 
 # Non-Prod ALB (dev·stg) — 팀·QA CIDR만 허용 (issues/ecs-network-topology.md 6절 nonprod-alb-sg)
 #   80 : 인증서가 없으면 HTTP 서비스, 있으면 443 리다이렉트용
-#   443: nonprod_alb_certificate_arn이 있을 때만 연다
+#   443: 인증서(nonprod_alb_certificate_arn 또는 nonprod_acm_certificate_create)가 있을 때만 연다
 resource "aws_security_group" "nonprod_alb" {
   name                   = "${var.project_name}-nonprod-alb"
   description            = "Internet-facing V2 non-prod (dev/stg) application load balancer"
@@ -88,7 +88,7 @@ resource "aws_security_group" "nonprod_alb" {
   }
 
   dynamic "ingress" {
-    for_each = var.nonprod_alb_certificate_arn == null ? [] : local.nonprod_alb_ingress_cidrs
+    for_each = local.nonprod_tls_enabled ? local.nonprod_alb_ingress_cidrs : []
 
     content {
       description = "HTTPS from ${ingress.value}"

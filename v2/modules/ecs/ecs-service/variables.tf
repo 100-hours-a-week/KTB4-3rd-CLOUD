@@ -289,3 +289,17 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "service_connect" {
+  description = <<-EOT
+    null이면 Service Connect를 쓰지 않는다.
+    namespace_arn : 클러스터 Service Connect 네임스페이스 (ecs-cluster 출력)
+    server        : true면 http://<name>:<container_port>로 호출을 받는다. false면 클라이언트로만 붙는다.
+    프록시 컨테이너가 태스크 메모리를 쓰므로 task_memory - container_memory 여유(64 MiB 이상)를 둔다.
+  EOT
+  type = object({
+    namespace_arn = string
+    server        = optional(bool, false)
+  })
+  default = null
+}

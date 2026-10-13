@@ -7,6 +7,7 @@
 #   - capacity_provider_strategy + memberOf(attribute:role == <role>) + distinctInstance
 #   - 서비스 전용 ip Target Group (서비스끼리 Target Group을 공유하지 않는다)
 #   - 롤링 배포 min 100 / max 200 + circuit breaker rollback
+#   - (선택) Service Connect server/client — var.service_connect
 #   - Service Auto Scaling(태스크) → Capacity Provider managed scaling(인스턴스) — autoscaling.tf
 # =============================================================================
 
@@ -31,6 +32,9 @@ locals {
 
   container_ports = distinct(concat([var.container_port], var.additional_container_ports))
 
+  # Service Connect: 서버는 이름 붙은 앱 포트(<name>)로 http://<name>:<container_port> 호출을 받는다
+  sc_enabled = var.service_connect != null
+
   # 빈 environment/secrets 배열은 AWS가 지워서 반환하므로 매 plan마다 diff가 생긴다 → 비어 있으면 키 자체를 뺀다
   container_definition = merge(
     {
@@ -42,11 +46,16 @@ locals {
       stopTimeout = var.stop_timeout_seconds
 
       portMappings = [
-        for p in local.container_ports : {
-          containerPort = p
-          hostPort      = p
-          protocol      = "tcp"
-        }
+        for p in local.container_ports : merge(
+          {
+            containerPort = p
+            hostPort      = p
+            protocol      = "tcp"
+          },
+          # 앱 포트에는 항상 이름을 붙인다. Service Connect 서버는 "현재 배포된 revision"에 이 이름이 있어야
+          # UpdateService가 성공하므로, 켜기 전에 이름이 들어간 revision이 CD로 한 번 배포되어 있어야 한다.
+          { for k, v in { name = var.name, appProtocol = "http" } : k => v if p == var.container_port },
+        )
       ]
 
       # ECS Exec 권장 설정
@@ -275,6 +284,41 @@ resource "aws_ecs_service" "this" {
     content {
       type  = ordered_placement_strategy.value.type
       field = ordered_placement_strategy.value.field
+    }
+  }
+
+  # Service Connect (클러스터 네임스페이스 <stage>.moyeota-v2.local)
+  #   server : http://<name>:<container_port> 로 같은 네임스페이스의 클라이언트 호출을 받는다
+  #   client : 서비스 등록 없이 프록시만 붙어 네임스페이스의 서버 이름을 해석한다
+  dynamic "service_connect_configuration" {
+    for_each = local.sc_enabled ? [var.service_connect] : []
+
+    content {
+      enabled   = true
+      namespace = service_connect_configuration.value.namespace_arn
+
+      log_configuration {
+        log_driver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.this.name
+          awslogs-region        = data.aws_region.current.region
+          awslogs-stream-prefix = "${var.name}-service-connect"
+        }
+      }
+
+      dynamic "service" {
+        for_each = service_connect_configuration.value.server ? [1] : []
+
+        content {
+          port_name      = var.name
+          discovery_name = var.name
+
+          client_alias {
+            port     = var.container_port
+            dns_name = var.name
+          }
+        }
+      }
     }
   }
 

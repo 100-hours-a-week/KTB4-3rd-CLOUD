@@ -209,7 +209,7 @@ variable "websocket_port" {
 }
 
 variable "spring_management_port" {
-  description = "Spring Actuator health-check port, reachable from the ALB only."
+  description = "Spring Actuator 관리 포트(management.server.port). BE application-prod.yaml 기본값 8090과 같아야 한다. ALB 헬스체크만 이 포트로 들어온다."
   type        = number
   default     = 8090
 }
@@ -236,6 +236,12 @@ variable "websocket_health_path" {
   description = "Spring WebSocket readiness path exposed by the management port."
   type        = string
   default     = "/actuator/health/readiness"
+}
+
+variable "spring_health_matcher" {
+  description = "rest·websocket Target Group 헬스체크 정상 코드. 4xx를 정상으로 넣으면 엔드포인트가 없어도(404) healthy가 되므로 200-399를 유지한다."
+  type        = string
+  default     = "200-399"
 }
 
 variable "alb_idle_timeout_seconds" {
@@ -344,5 +350,173 @@ variable "ecs_alb_host_headers" {
       if length(lookup(var.ecs_container_images, stage, {})) > 0
     ])
     error_message = "dev·stg ECS 서비스를 만들려면 ecs_alb_host_headers에 해당 스테이지 서브도메인(예: dev = [\"dev.moyeota.com\"])을 지정해야 한다."
+  }
+}
+
+# -----------------------------------------------------------------------------
+# 채팅 브로커·데이터 계층 (broker.tf)
+# -----------------------------------------------------------------------------
+
+variable "elasticache_redis_stages" {
+  description = "채팅 브로커 ElastiCache Redis를 만들 스테이지. stg는 QA·스케줄링 테스트 때만 넣고 끝나면 뺀다. prod는 replica 1 + 자동 장애 조치(broker.tf). dev는 dev EC2 compose Redis를 쓴다."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for s in var.elasticache_redis_stages : contains(["stg", "prod"], s)])
+    error_message = "elasticache_redis_stages는 stg 또는 prod만 지정할 수 있다 (dev는 dev EC2 compose Redis 사용)."
+  }
+}
+
+variable "redis_engine_version" {
+  description = "ElastiCache Redis OSS 엔진 버전"
+  type        = string
+  default     = "7.1"
+}
+
+variable "redis_parameter_group_name" {
+  description = "redis_engine_version과 같은 계열의 파라미터 그룹"
+  type        = string
+  default     = "default.redis7"
+}
+
+variable "redis_node_type" {
+  type    = string
+  default = "cache.t4g.micro"
+}
+
+variable "redis_port" {
+  type    = number
+  default = 6379
+}
+
+variable "redis_transit_encryption_enabled" {
+  description = "전송 구간 TLS. true로 바꾸면 BE에 SPRING_DATA_REDIS_SSL_ENABLED=true가 필요하다 (변경 시 클러스터 교체)."
+  type        = bool
+  default     = false
+}
+
+variable "dev_redis_port" {
+  description = "dev EC2 compose Redis가 호스트에 publish한 포트 (dev 브로커 REDIS_PORT 값)"
+  type        = number
+  default     = 6379
+}
+
+variable "chat_fanout_schema_version" {
+  description = "채팅 fan-out 이벤트 계약 버전. 채널 이름 moyeota:<stage>:chat:fanout:v<버전>에 들어간다. 계약을 깨는 변경 때만 올린다."
+  type        = number
+  default     = 1
+}
+
+variable "alarm_sns_topic_arn" {
+  description = "브로커 CloudWatch 알람을 보낼 SNS 토픽. null이면 알람 상태만 남는다."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "dev_data_ports" {
+  description = "dev rest·websocket 태스크가 dev EC2(compose MySQL·Redis)에 접근할 포트"
+  type        = list(number)
+  default     = [3306, 6379]
+}
+
+# -----------------------------------------------------------------------------
+# Non-Prod DNS·인증서 (dns.tf)
+# -----------------------------------------------------------------------------
+
+variable "route53_zone_name" {
+  description = "Non-Prod ALIAS·ACM DNS 검증 레코드를 만들 퍼블릭 Hosted Zone (예: moyeota.com). null이면 DNS 리소스를 만들지 않는다."
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "nonprod_dns_records" {
+  description = <<-EOT
+    Terraform이 Non-Prod ALB로 ALIAS(A)할 호스트 이름. ecs_alb_host_headers의 dev·stg 값 중에서 고른다.
+    V1이 이미 쓰는 레코드(예: dev.moyeota.com)는 넣지 않는다 — 같은 이름의 기존 레코드가 있으면 apply가 실패한다.
+    V1 레코드를 넘겨받으려면 terraform import 후 목록에 추가한다.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = length(var.nonprod_dns_records) == 0 || var.route53_zone_name != null
+    error_message = "nonprod_dns_records를 쓰려면 route53_zone_name이 필요하다."
+  }
+
+  validation {
+    condition = alltrue([
+      for host in var.nonprod_dns_records :
+      contains(concat(lookup(var.ecs_alb_host_headers, "dev", []), lookup(var.ecs_alb_host_headers, "stg", [])), host)
+    ])
+    error_message = "nonprod_dns_records는 ecs_alb_host_headers의 dev·stg 호스트 중에서만 지정할 수 있다."
+  }
+}
+
+variable "nonprod_acm_certificate_create" {
+  description = <<-EOT
+    true: ecs_alb_host_headers의 dev·stg 호스트를 SAN으로 묶은 ACM 인증서를 만들고 route53_zone_name에서 DNS 검증한 뒤
+          Non-Prod ALB HTTPS 리스너에 붙인다 (wss:// 테스트용).
+    nonprod_alb_certificate_arn을 지정하면 그 인증서가 우선이고 새로 만들지 않는다.
+  EOT
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.nonprod_acm_certificate_create || var.route53_zone_name != null
+    error_message = "nonprod_acm_certificate_create = true 이면 route53_zone_name이 필요하다."
+  }
+
+  validation {
+    condition = !var.nonprod_acm_certificate_create || length(concat(
+      lookup(var.ecs_alb_host_headers, "dev", []),
+      lookup(var.ecs_alb_host_headers, "stg", []),
+    )) > 0
+    error_message = "nonprod_acm_certificate_create = true 이면 ecs_alb_host_headers에 dev 또는 stg 호스트가 있어야 한다."
+  }
+}
+
+# -----------------------------------------------------------------------------
+# CD (Deploy Role OIDC)
+# -----------------------------------------------------------------------------
+
+variable "github_app_repositories" {
+  description = <<-EOT
+    스테이지 Deploy Role을 Assume할 앱 레포 (github_org 하위). CD 워크플로가 BE·FE 레포에서 workflow_run으로 돌기 때문에 필요하다.
+    OIDC sub는 대소문자를 구분하므로 GitHub에 표시되는 레포 이름 그대로 적는다.
+  EOT
+  type        = list(string)
+  default     = ["KTB4-3rd-BE", "KTB4-3rd-FE"]
+}
+
+# -----------------------------------------------------------------------------
+# Service Connect (ecs.tf) · FIS (fis.tf)
+# -----------------------------------------------------------------------------
+
+variable "ecs_service_connect_stages" {
+  description = <<-EOT
+    Service Connect를 켤 스테이지. fastapi는 서버(http://fastapi:<fastapi_port>), rest·websocket은 클라이언트로 등록된다.
+    켜면 태스크마다 Service Connect 프록시 컨테이너가 붙고 모든 대상 서비스가 새 배포된다.
+    켜기 전에 fastapi에 이름 붙은 포트(portMappings.name = fastapi)가 들어간 Task Definition revision이 CD로 배포돼 있어야 한다.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for s in var.ecs_service_connect_stages : contains(["dev", "stg", "prod"], s)])
+    error_message = "ecs_service_connect_stages must contain dev, stg or prod."
+  }
+}
+
+variable "fis_stages" {
+  description = "FIS 실험 템플릿(태스크 종료·Spot 중단·컨테이너 인스턴스 드레인)을 만들 스테이지. 템플릿은 실행하기 전까지 비용·영향이 없다."
+  type        = list(string)
+  default     = ["stg"]
+
+  validation {
+    condition     = alltrue([for s in var.fis_stages : contains(["dev", "stg"], s)])
+    error_message = "fis_stages는 dev 또는 stg만 지정할 수 있다 (prod 장애 주입 금지)."
   }
 }
