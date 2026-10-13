@@ -8,23 +8,51 @@ GitHub Actions는 `.github/workflows/` 바로 아래 파일만 실행하므로, 
 | `v2-be-{dev,stg,prod}-cd.yaml` | KTB4-3rd-BE | `workflow_run: BE CI` (dev / release/** / main) |
 | `v2-fe-dev-ci.yaml` | KTB4-3rd-FE | push·PR (develop / main / release/**) |
 | `v2-fe-{dev,stg,prod}-cd.yaml` | KTB4-3rd-FE | `workflow_run: FE CI` |
+| `../../actions/ecs-deploy/action.yml` | KTB4-3rd-BE, KTB4-3rd-FE의 `.github/actions/ecs-deploy/action.yml` | CD가 로컬 action으로 사용 |
 
 ## 배포 액션
 
-CD 워크플로는 이 레포의 composite action을 직접 참조한다 (앱 레포에 복사하지 않는다).
+CD 워크플로는 **앱 레포 안에 복사한** composite action을 로컬 경로로 쓴다. CLOUD 레포를 원격 참조하지 않는다.
 
 ```yaml
+- name: Checkout deploy action
+  uses: actions/checkout@v4
+  with:
+    sparse-checkout: .github/actions
+    persist-credentials: false
+
 - name: Deploy to ECS
-  uses: 100-hours-a-week/KTB4-3rd-CLOUD/.github/actions/ecs-deploy@main
+  uses: ./.github/actions/ecs-deploy
 ```
 
-- 이 레포가 public이어야 하고, 조직 Actions 정책이 같은 조직 레포의 action을 허용해야 한다.
-- 액션 정의: [`.github/actions/ecs-deploy/action.yml`](../../actions/ecs-deploy/action.yml)
+- 원본: [`.github/actions/ecs-deploy/action.yml`](../../actions/ecs-deploy/action.yml). 이 파일이 기준이고, 고치면 BE·FE 레포의 사본도 같이 맞춘다.
+- 로컬 action은 checkout이 있어야 읽히므로 deploy job에 sparse checkout(`.github/actions`만)을 둔다.
+- `workflow_run` job은 기본 브랜치(main) 커밋으로 checkout한다 → action 사본도 앱 레포 **main**에 있어야 한다.
+- checkout은 작업 디렉터리를 비우므로, 그 뒤 step에서는 앞서 받은 `release-manifest/` 파일을 쓰지 않는다(값은 step output으로 넘긴다).
 
 ## 앱 레포 설정
 
-- GitHub Environment `dev` / `stg` / `prod`를 만들고, 각 environment에 `ECS_DEPLOY_ROLE_ARN` secret을 넣는다
+- GitHub Environment `dev` / `staging` / `production`을 만들고, 각 environment에 `ECS_DEPLOY_ROLE_ARN` secret을 넣는다
   (값: `terraform output ecs_deploy_role_arns`의 해당 스테이지).
-- Deploy Role 신뢰 정책은 `repo:100-hours-a-week/<앱 레포>:environment:<stage>`만 허용한다
+- Deploy Role 신뢰 정책은 `repo:100-hours-a-week/<앱 레포>:environment:<environment>`만 허용한다 (스테이지→environment 매핑은 `v2/variables.tf`의 `github_deploy_environments`)
   (`v2/variables.tf`의 `github_app_repositories`). job에 `environment:`가 없으면 AssumeRole이 거부된다.
 - `vars.AWS_REGION`, `vars.ECR_REGISTRY`, `vars.ECR_REPOSITORY`, (선택) `vars.ECS_CLUSTER`
+
+## dev V1 병행 연결 (DNS 전환 전)
+
+`dev.moyeota.com`이 아직 V1 dev EC2를 가리키는 동안에는 V1 `dev-cd.yaml`을 지우지 않고 V2 CD를 **추가**한다.
+
+| 앱 레포 | 추가할 파일 | 그대로 두는 파일 |
+|---|---|---|
+| KTB4-3rd-BE | `v2-be-dev-cd.yaml` (BE V2 Dev CD), `.github/actions/ecs-deploy/action.yml` | `dev-cd.yaml`, `dev-be-ci.yaml` |
+| KTB4-3rd-FE | `v2-fe-dev-cd.yaml` (FE V2 Dev CD), `.github/actions/ecs-deploy/action.yml` | `dev-cd.yaml`, `dev-fe-ci.yaml` |
+
+- 두 CD가 같은 CI 실행의 `release-manifest`(dev-* digest)를 받아 V1 EC2와 V2 ECS에 각각 배포한다.
+  워크플로 이름과 concurrency group(`*-v2-cd-dev`)이 V1과 달라 서로 기다리지 않는다.
+- FE CI는 병행 기간 동안 V1(`dev-fe-ci.yaml`, GitHub vars 빌드)을 유지한다. 같은 이미지가 V1에도 나가므로
+  SSM 빌드(`v2-fe-dev-ci.yaml`)로의 교체는 DNS 전환 때 함께 한다.
+- 앱 레포 `dev` environment에 `ECS_DEPLOY_ROLE_ARN` secret 추가 (`terraform output ecs_deploy_role_arns` → dev).
+- FE: Dev ECS `frontend` 서비스가 있어야 CD가 성공한다. `v2/terraform.tfvars`의 `ecs_container_images.dev.frontend`에
+  최초 이미지(digest)를 넣고 apply한 뒤부터는 CD가 Task Definition을 갱신한다 (`ignore_changes = [task_definition]`).
+- V2 확인은 DNS를 바꾸지 않고 `curl --resolve dev.moyeota.com:443:<Non-Prod ALB IP> https://dev.moyeota.com/...`로 한다.
+- DNS 전환 시: `nonprod_dns_records`로 ALIAS 생성 → V1 `dev-cd.yaml` 삭제 → FE CI를 `v2-fe-dev-ci.yaml`로 교체.
