@@ -209,7 +209,7 @@ variable "websocket_port" {
 }
 
 variable "spring_management_port" {
-  description = "Spring Actuator health-check port, reachable from the ALB only."
+  description = "Spring Actuator 관리 포트(management.server.port). BE application-prod.yaml 기본값 8090과 같아야 한다. ALB 헬스체크만 이 포트로 들어온다."
   type        = number
   default     = 8090
 }
@@ -236,6 +236,12 @@ variable "websocket_health_path" {
   description = "Spring WebSocket readiness path exposed by the management port."
   type        = string
   default     = "/actuator/health/readiness"
+}
+
+variable "spring_health_matcher" {
+  description = "rest·websocket Target Group 헬스체크 정상 코드. 4xx를 정상으로 넣으면 엔드포인트가 없어도(404) healthy가 되므로 200-399를 유지한다."
+  type        = string
+  default     = "200-399"
 }
 
 variable "alb_idle_timeout_seconds" {

@@ -210,6 +210,7 @@ module "ecs_service" {
     http_headers          = each.value.alb.http_headers
     health_check_path     = each.value.health_check_path
     health_check_port     = each.value.health_check_port
+    health_check_matcher  = each.value.health_check_matcher
     deregistration_delay  = each.value.deregistration_delay
   }
 

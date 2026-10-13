@@ -155,6 +155,7 @@ locals {
       route_order          = 0
       health_check_path    = var.websocket_health_path
       health_check_port    = var.spring_management_port
+      health_check_matcher = var.spring_health_matcher
       deregistration_delay = 120 # 장기 연결 드레이닝
     }
     rest = {
@@ -169,6 +170,7 @@ locals {
       route_order          = 1
       health_check_path    = var.rest_health_path
       health_check_port    = var.spring_management_port
+      health_check_matcher = var.spring_health_matcher
       deregistration_delay = 30 # Spot 2분 알림 안에 끝나도록
     }
     fastapi = {
@@ -183,6 +185,7 @@ locals {
       route_order          = 2
       health_check_path    = var.fastapi_health_path
       health_check_port    = null
+      health_check_matcher = "200-399"
       deregistration_delay = 30
     }
     frontend = {
@@ -197,6 +200,7 @@ locals {
       route_order          = 3
       health_check_path    = var.frontend_health_path
       health_check_port    = null
+      health_check_matcher = "200-399"
       deregistration_delay = 30
     }
   }
