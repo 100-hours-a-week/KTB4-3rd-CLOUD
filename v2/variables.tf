@@ -533,3 +533,23 @@ variable "fis_stages" {
     error_message = "fis_stages는 dev 또는 stg만 지정할 수 있다 (prod 장애 주입 금지)."
   }
 }
+
+variable "dev_instance_schedule" {
+  description = <<-EOT
+    Dev EC2 호스트(aws_instance.host["dev"]) 운영 시간 스케줄 (scheduler.tf).
+    기본: 매일 09:00 시작 / 24:00(=00:00) 중지, Asia/Seoul. cron은 EventBridge Scheduler 형식(6필드).
+    주말을 빼려면 start_cron = "cron(0 9 ? * MON-FRI *)", stop_cron = "cron(0 0 ? * TUE-SAT *)".
+  EOT
+  type = object({
+    enabled    = optional(bool, true)
+    timezone   = optional(string, "Asia/Seoul")
+    start_cron = optional(string, "cron(0 9 * * ? *)")
+    stop_cron  = optional(string, "cron(0 0 * * ? *)")
+  })
+  default = {}
+
+  validation {
+    condition     = can(regex("^cron\\(.+\\)$", var.dev_instance_schedule.start_cron)) && can(regex("^cron\\(.+\\)$", var.dev_instance_schedule.stop_cron))
+    error_message = "dev_instance_schedule.start_cron / stop_cron must be EventBridge Scheduler cron(...) expressions."
+  }
+}
