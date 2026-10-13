@@ -165,8 +165,14 @@ jobs:
           role-to-assume: ${{ secrets.ECS_DEPLOY_ROLE_ARN }}
           role-session-name: backend-prod-cd-${{ matrix.service }}-${{ github.run_id }}
 
+      - name: Checkout deploy action
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+          persist-credentials: false
+
       - name: Deploy to ECS
-        uses: 100-hours-a-week/KTB4-3rd-CLOUD/.github/actions/ecs-deploy@main
+        uses: ./.github/actions/ecs-deploy
         with:
           cluster: ${{ env.ECS_CLUSTER }}
           service: ${{ matrix.service }}
