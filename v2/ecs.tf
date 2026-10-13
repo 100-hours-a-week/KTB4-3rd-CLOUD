@@ -90,11 +90,12 @@ module "ecs_cluster" {
   enable_execute_command  = true
   exec_log_retention_days = each.value.exec_log_retention_days
 
-  # CD는 BE·FE 레포에서 workflow_run(BE CI / FE CI)으로 돈다 → 앱 레포의 같은 이름 environment만 허용
+  # CD는 BE·FE 레포에서 workflow_run(BE CI / FE CI)으로 돈다 → 앱 레포의 해당 스테이지 environment만 허용
+  #   스테이지 키(stg/prod)와 GitHub Environment 이름(staging/production)이 달라 github_deploy_environments로 매핑한다
   github_oidc_provider_arn = data.aws_iam_openid_connect_provider.github.arn
   github_oidc_subjects = [
     for repo in distinct(concat([var.github_cloud_repository], var.github_app_repositories)) :
-    "repo:${var.github_org}/${repo}:environment:${each.key}"
+    "repo:${var.github_org}/${repo}:environment:${lookup(var.github_deploy_environments, each.key, each.key)}"
   ]
 }
 

@@ -491,6 +491,19 @@ variable "github_app_repositories" {
   default     = ["KTB4-3rd-BE", "KTB4-3rd-FE"]
 }
 
+variable "github_deploy_environments" {
+  description = <<-EOT
+    스테이지 → CD job의 GitHub Environment 이름. Deploy Role 신뢰 정책의 OIDC sub(environment:<이름>)에 쓰인다.
+    앱 레포는 V1부터 production environment(승인 규칙)를 써 왔고 V2 CD 워크플로도 staging/production을 쓰므로 스테이지 키와 다르다.
+  EOT
+  type        = map(string)
+  default = {
+    dev  = "dev"
+    stg  = "staging"
+    prod = "production"
+  }
+}
+
 # -----------------------------------------------------------------------------
 # Service Connect (ecs.tf) · FIS (fis.tf)
 # -----------------------------------------------------------------------------
