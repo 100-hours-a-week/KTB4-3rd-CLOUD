@@ -148,3 +148,7 @@ monitoring_alloy_memory = {
   reservation = 128
   limit       = 256
 }
+
+# Grafana 알림 (modules/monitoring/templates/grafana/alerting.yaml.tftpl) — 서비스 지표 규칙 → Discord
+#   대상 스테이지는 alert_stages. SSM DISCORD_WEBHOOK_INCIDENT·DISCORD_WEBHOOK_ALERTS 값을 넣은 뒤 켠다
+monitoring_grafana_alerting_enabled = false
