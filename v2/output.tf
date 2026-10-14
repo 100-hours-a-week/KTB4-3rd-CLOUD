@@ -144,6 +144,7 @@ output "monitoring" {
     private_ip      = module.monitoring[0].private_ip
     ssm_session     = module.monitoring[0].ssm_session_command
     grafana_forward = module.monitoring[0].grafana_port_forward_command
+    grafana_url     = local.grafana_access_enabled ? local.grafana_root_url : null
   } : null
 }
 

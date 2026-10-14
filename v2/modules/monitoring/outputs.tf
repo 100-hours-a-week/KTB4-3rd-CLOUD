@@ -61,3 +61,8 @@ output "prometheus_config" {
   description = "렌더링된 prometheus.yml (검토용)"
   value       = local.config_files["prometheus/prometheus.yml"]
 }
+
+output "compose_config" {
+  description = "렌더링된 compose.yaml (검토용)"
+  value       = local.config_files["compose.yaml"]
+}
