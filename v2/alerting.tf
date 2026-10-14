@@ -103,6 +103,23 @@ locals {
       }
     } : {},
 
+    # Alloy가 Loki 전송 재시도를 모두 실패해 로그 배치를 버림 (alloy.tf의 로그 지표 필터)
+    {
+      for stage in local.monitoring_log_stages : "${stage}-alloy-log-dropped" => {
+        description = "${stage} Alloy가 Loki 전송에 실패해 로그를 버림 (CloudWatch 원본은 남아 있음)"
+        namespace   = module.monitoring[0].heartbeat_namespace
+        metric      = "AlloyDroppedBatches-${stage}"
+        dimensions  = {}
+        statistic   = "Sum"
+        period      = 300
+        evaluations = 1
+        threshold   = 0
+        comparison  = "GreaterThanThreshold"
+        missing     = "notBreaching"
+        stage       = stage
+      } if local.alerting_enabled && contains(var.alert_stages, stage)
+    },
+
     # Prod ALB 자체 5xx (대상이 없거나 응답하지 않을 때 ALB가 만드는 502·503·504)
     local.alerting_enabled && contains(var.alert_stages, "prod") ? {
       "prod-alb-elb-5xx" = {
