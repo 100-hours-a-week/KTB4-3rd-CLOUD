@@ -91,3 +91,17 @@ resource "aws_vpc_security_group_ingress_rule" "task_metrics_from_monitoring" {
   from_port                    = each.value.port
   to_port                      = each.value.port
 }
+
+# -----------------------------------------------------------------------------
+# 모니터링 모듈 (저장소 · IAM · 호스트 · 설정)
+# -----------------------------------------------------------------------------
+
+module "monitoring" {
+  source = "./modules/monitoring"
+  count  = local.monitoring_enabled ? 1 : 0
+
+  project_name       = var.project_name
+  config_path_prefix = var.config_path_prefix
+
+  tags = { Component = "monitoring" }
+}
