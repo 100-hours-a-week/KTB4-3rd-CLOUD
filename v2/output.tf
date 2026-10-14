@@ -136,7 +136,9 @@ output "fis_experiment_template_ids" {
 output "monitoring" {
   description = "중앙 모니터링 리소스 (monitoring_enabled = true일 때)"
   value = local.monitoring_enabled ? {
-    logs_bucket   = module.monitoring[0].logs_bucket_name
-    config_bucket = module.monitoring[0].config_bucket_name
+    logs_bucket    = module.monitoring[0].logs_bucket_name
+    config_bucket  = module.monitoring[0].config_bucket_name
+    ssm_parameters = module.monitoring[0].ssm_parameter_names
+    host_role      = module.monitoring[0].host_role_name
   } : null
 }
