@@ -1,0 +1,81 @@
+#!/bin/bash
+# 모니터링 호스트 부트스트랩 (Amazon Linux 2023)
+#   1) Docker + Compose 플러그인 설치
+#   2) 데이터 EBS 포맷·마운트 (/var/lib/monitoring)
+#   3) 설정 동기화 스크립트 + systemd timer(1분) 등록 → S3 설정 버킷을 받아 PLG 스택을 띄운다
+set -Eeuo pipefail
+exec > >(tee /var/log/moyeota-monitoring-bootstrap.log | logger -t moyeota-monitoring -s 2>/dev/console) 2>&1
+
+DATA_VOLUME_ID="${data_volume_id}"
+DATA_DIR=/var/lib/monitoring
+BASE=/opt/moyeota-monitoring
+
+dnf install -y docker xfsprogs
+systemctl enable --now docker
+
+if ! docker compose version >/dev/null 2>&1; then
+  install -d -m 0755 /usr/local/lib/docker/cli-plugins
+  curl --fail --location --show-error --silent \
+    "https://github.com/docker/compose/releases/download/${docker_compose_version}/docker-compose-linux-x86_64" \
+    --output /usr/local/lib/docker/cli-plugins/docker-compose
+  chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+fi
+
+# Nitro 인스턴스는 EBS를 NVMe로 붙이고, 장치 시리얼이 대시를 뺀 볼륨 ID다 (vol-0abc → vol0abc)
+SERIAL="$(echo "$DATA_VOLUME_ID" | tr -d '-')"
+DEVICE=""
+for _ in $(seq 1 60); do
+  DEVICE="$(lsblk -dnpo NAME,SERIAL | awk -v s="$SERIAL" '$2 == s {print $1}')"
+  [ -n "$DEVICE" ] && break
+  sleep 5
+done
+if [ -z "$DEVICE" ]; then
+  echo "data volume $DATA_VOLUME_ID was not attached within 300 seconds" >&2
+  exit 1
+fi
+
+blkid "$DEVICE" >/dev/null 2>&1 || mkfs.xfs -f "$DEVICE"
+UUID="$(blkid -s UUID -o value "$DEVICE")"
+install -d -m 0755 "$DATA_DIR"
+grep -q "UUID=$UUID " /etc/fstab || echo "UUID=$UUID $DATA_DIR xfs defaults,nofail 0 2" >> /etc/fstab
+mountpoint -q "$DATA_DIR" || mount "$DATA_DIR"
+
+# 컨테이너 실행 사용자별 데이터 디렉터리 (prometheus 65534, loki 10001, grafana 472)
+install -d -o 65534 -g 65534 -m 0755 "$DATA_DIR/prometheus"
+install -d -o 10001 -g 10001 -m 0755 "$DATA_DIR/loki"
+install -d -o 472 -g 0 -m 0755 "$DATA_DIR/grafana"
+
+install -d -m 0750 "$BASE" "$BASE/config"
+echo '${sync_env_b64}' | base64 -d > /etc/moyeota-monitoring.env
+echo '${sync_script_b64}' | base64 -d > /usr/local/bin/moyeota-monitoring-sync
+chmod 0644 /etc/moyeota-monitoring.env
+chmod 0755 /usr/local/bin/moyeota-monitoring-sync
+
+cat > /etc/systemd/system/moyeota-monitoring-sync.service <<'UNIT'
+[Unit]
+Description=Sync monitoring config from S3, reconcile PLG stack, publish heartbeat
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/moyeota-monitoring.env
+ExecStart=/usr/local/bin/moyeota-monitoring-sync
+UNIT
+
+cat > /etc/systemd/system/moyeota-monitoring-sync.timer <<'UNIT'
+[Unit]
+Description=Run moyeota-monitoring-sync every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now moyeota-monitoring-sync.timer
+systemctl start moyeota-monitoring-sync.service

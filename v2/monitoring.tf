@@ -103,5 +103,15 @@ module "monitoring" {
   project_name       = var.project_name
   config_path_prefix = var.config_path_prefix
 
+  subnet_id              = aws_subnet.v2[local.monitoring_subnet_key].id
+  availability_zone      = aws_subnet.v2[local.monitoring_subnet_key].availability_zone
+  security_group_ids     = [aws_security_group.monitoring[0].id]
+  instance_type          = var.monitoring_instance_type
+  data_volume_size_gib   = var.monitoring_data_volume_size_gib
+  docker_compose_version = var.docker_compose_version
+
+  prometheus_retention_days = var.monitoring_prometheus_retention_days
+  loki_retention_days       = var.monitoring_loki_retention_days
+
   tags = { Component = "monitoring" }
 }
