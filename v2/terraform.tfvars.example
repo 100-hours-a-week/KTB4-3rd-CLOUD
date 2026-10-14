@@ -16,7 +16,12 @@ subnet_cidrs = {
   dev      = "10.20.41.0/24"
   data_a   = "10.20.100.0/24"
   data_b   = "10.20.101.0/24"
+  # 모니터링 호스트 전용 서브넷 (선택). 비워 두면 모니터링 호스트는 app 서브넷에 둔다.
+  ops = "10.20.43.0/24"
 }
+
+# private 워크로드의 S3 트래픽을 NAT 대신 Gateway Endpoint로 보낸다
+s3_gateway_endpoint_enabled = true
 
 prod_app_instance_type       = "t3.small"
 prod_websocket_instance_type = "t3.medium"

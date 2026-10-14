@@ -84,10 +84,24 @@ resource "aws_route" "private_workloads_nat" {
 }
 
 resource "aws_route_table_association" "private_workloads" {
-  for_each = toset(["app", "dev"])
+  for_each = toset(local.private_workload_subnet_keys)
 
   subnet_id      = aws_subnet.v2[each.key].id
   route_table_id = aws_route_table.private_workloads.id
+}
+
+# S3 Gateway Endpoint: private 워크로드 서브넷의 S3 트래픽(ECR 레이어, 모니터링 로그 블록)을 NAT 대신 VPC 안에서 보낸다.
+resource "aws_vpc_endpoint" "s3" {
+  count = var.s3_gateway_endpoint_enabled ? 1 : 0
+
+  vpc_id            = data.aws_vpc.shared.id
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private_workloads.id]
+
+  tags = {
+    Name = "${var.project_name}-s3-gateway"
+  }
 }
 
 # Data subnets remain isolated; RDS/Redis resources are not created in this root yet.
