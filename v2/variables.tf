@@ -656,3 +656,18 @@ variable "alert_alb_5xx_threshold" {
   type        = number
   default     = 10
 }
+
+variable "alert_discord_enabled" {
+  description = <<-EOT
+    true면 "<project>-" 로 시작하는 CloudWatch 알람의 상태 변경(ALARM·OK)을 EventBridge API destination으로 Discord #incident에 보낸다.
+    웹훅 URL은 /<config_path_prefix>/monitoring/DISCORD_WEBHOOK_INCIDENT 값을 읽는다 → 값을 넣은 뒤에 켠다 (CHANGE_ME면 생성 실패).
+    URL이 state에 남으므로(sensitive) state 버킷 접근 권한을 확인한다.
+  EOT
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.alert_discord_enabled || (var.alerting_enabled && var.monitoring_enabled)
+    error_message = "alert_discord_enabled = true 이면 alerting_enabled와 monitoring_enabled(웹훅 SSM 파라미터)가 모두 true여야 한다."
+  }
+}
