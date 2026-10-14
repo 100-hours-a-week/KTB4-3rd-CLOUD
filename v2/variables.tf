@@ -566,3 +566,17 @@ variable "dev_instance_schedule" {
     error_message = "dev_instance_schedule.start_cron / stop_cron must be EventBridge Scheduler cron(...) expressions."
   }
 }
+
+# -----------------------------------------------------------------------------
+# 중앙 모니터링 (monitoring.tf) — PLG(Prometheus · Loki · Grafana) + Alloy
+#   wiki「V2 중앙 집중식 모니터링 시스템 설계」
+# -----------------------------------------------------------------------------
+
+variable "monitoring_enabled" {
+  description = <<-EOT
+    true면 중앙 모니터링 리소스(모니터링 SG·수집 포트 규칙, 이후 호스트·저장소·수집기)를 만든다.
+    false(기본값)면 이 파일 묶음은 아무것도 만들지 않으므로, 모니터링 PR이 머지돼도 tfvars에서 켜기 전까지 인프라가 바뀌지 않는다.
+  EOT
+  type        = bool
+  default     = false
+}
