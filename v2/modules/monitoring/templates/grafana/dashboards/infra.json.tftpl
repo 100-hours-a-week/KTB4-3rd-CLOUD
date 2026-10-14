@@ -1,0 +1,1207 @@
+{
+  "uid": "moyeota-v2-infra",
+  "title": "V2 인프라 (CloudWatch)",
+  "description": "ALB · ECS(Container Insights) · ElastiCache · 모니터링 호스트 하트비트. AWS 지표는 복제하지 않고 CloudWatch 데이터소스로 조회한다.",
+  "tags": [
+    "moyeota",
+    "v2"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "stage",
+        "label": "Stage",
+        "type": "custom",
+        "query": "prod,stg,dev",
+        "current": {
+          "text": "prod",
+          "value": "prod"
+        },
+        "options": [
+          {
+            "text": "prod",
+            "value": "prod",
+            "selected": true
+          },
+          {
+            "text": "stg",
+            "value": "stg",
+            "selected": false
+          },
+          {
+            "text": "dev",
+            "value": "dev",
+            "selected": false
+          }
+        ],
+        "hide": 0,
+        "multi": false,
+        "includeAll": false
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "moyeota"
+      ],
+      "asDropdown": true,
+      "title": "Moyeota V2",
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "id": 1,
+      "type": "row",
+      "title": "Prod ALB",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "요청량",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "RequestCount",
+          "dimensions": {
+            "LoadBalancer": "${prod_alb}"
+          },
+          "matchExact": true,
+          "statistic": "Sum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "요청"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 2,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "5xx",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HTTPCode_Target_5XX_Count",
+          "dimensions": {
+            "LoadBalancer": "${prod_alb}"
+          },
+          "matchExact": true,
+          "statistic": "Sum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "타깃 5xx"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HTTPCode_ELB_5XX_Count",
+          "dimensions": {
+            "LoadBalancer": "${prod_alb}"
+          },
+          "matchExact": true,
+          "statistic": "Sum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "ALB 5xx"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 3,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "타깃 응답 시간 p99",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "TargetResponseTime",
+          "dimensions": {
+            "LoadBalancer": "${prod_alb}"
+          },
+          "matchExact": true,
+          "statistic": "p99",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 4,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      }
+    },
+    {
+      "id": 5,
+      "type": "row",
+      "title": "Non-Prod ALB (dev · stg)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 9
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "요청량",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "RequestCount",
+          "dimensions": {
+            "LoadBalancer": "${nonprod_alb}"
+          },
+          "matchExact": true,
+          "statistic": "Sum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "요청"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 6,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 10
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "5xx",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HTTPCode_Target_5XX_Count",
+          "dimensions": {
+            "LoadBalancer": "${nonprod_alb}"
+          },
+          "matchExact": true,
+          "statistic": "Sum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "타깃 5xx"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HTTPCode_ELB_5XX_Count",
+          "dimensions": {
+            "LoadBalancer": "${nonprod_alb}"
+          },
+          "matchExact": true,
+          "statistic": "Sum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "ALB 5xx"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 7,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 10
+      }
+    },
+    {
+      "id": 8,
+      "type": "row",
+      "title": "ECS ($stage) — Container Insights를 켠 스테이지만 값이 있다",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 18
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "서비스별 CPU 사용 (CPU 유닛)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "ECS/ContainerInsights",
+          "metricName": "CpuUtilized",
+          "dimensions": {
+            "ClusterName": "${project_name}-$stage",
+            "ServiceName": "*"
+          },
+          "matchExact": true,
+          "statistic": "Average",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "$${PROP('Dim.ServiceName')}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 9,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 19
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "서비스별 메모리 사용 (MiB)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "ECS/ContainerInsights",
+          "metricName": "MemoryUtilized",
+          "dimensions": {
+            "ClusterName": "${project_name}-$stage",
+            "ServiceName": "*"
+          },
+          "matchExact": true,
+          "statistic": "Average",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "$${PROP('Dim.ServiceName')}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 10,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 19
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "서비스별 실행 태스크 수",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "ECS/ContainerInsights",
+          "metricName": "RunningTaskCount",
+          "dimensions": {
+            "ClusterName": "${project_name}-$stage",
+            "ServiceName": "*"
+          },
+          "matchExact": true,
+          "statistic": "Average",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "$${PROP('Dim.ServiceName')}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 11,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "컨테이너 인스턴스 수",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "ECS/ContainerInsights",
+          "metricName": "ContainerInstanceCount",
+          "dimensions": {
+            "ClusterName": "${project_name}-$stage"
+          },
+          "matchExact": true,
+          "statistic": "Average",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "인스턴스"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 12,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      }
+    },
+    {
+      "id": 13,
+      "type": "row",
+      "title": "ElastiCache (Redis)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 35
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Engine CPU",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/ElastiCache",
+          "metricName": "EngineCPUUtilization",
+          "dimensions": {
+            "CacheClusterId": "*"
+          },
+          "matchExact": true,
+          "statistic": "Average",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "$${PROP('Dim.CacheClusterId')}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 14,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 36
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "메모리 사용률",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/ElastiCache",
+          "metricName": "DatabaseMemoryUsagePercentage",
+          "dimensions": {
+            "CacheClusterId": "*"
+          },
+          "matchExact": true,
+          "statistic": "Maximum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "$${PROP('Dim.CacheClusterId')}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 15,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 36
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "연결 수",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/ElastiCache",
+          "metricName": "CurrConnections",
+          "dimensions": {
+            "CacheClusterId": "*"
+          },
+          "matchExact": true,
+          "statistic": "Maximum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "$${PROP('Dim.CacheClusterId')}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 16,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 36
+      }
+    },
+    {
+      "id": 17,
+      "type": "row",
+      "title": "모니터링 호스트 (하트비트)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 44
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "컴포넌트 상태 (1 = 정상)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "Moyeota/Monitoring",
+          "metricName": "ComponentHealthy",
+          "dimensions": {
+            "Component": [
+              "prometheus",
+              "loki",
+              "grafana"
+            ]
+          },
+          "matchExact": true,
+          "statistic": "Minimum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "$${PROP('Dim.Component')}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 18,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 45
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "데이터 디스크 사용률",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "Moyeota/Monitoring",
+          "metricName": "DataDiskUsedPercent",
+          "dimensions": {
+            "Component": "host"
+          },
+          "matchExact": true,
+          "statistic": "Maximum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "디스크"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 19,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 45
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "메모리 사용률",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "Moyeota/Monitoring",
+          "metricName": "MemoryUsedPercent",
+          "dimensions": {
+            "Component": "host"
+          },
+          "matchExact": true,
+          "statistic": "Maximum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "메모리"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 20,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 45
+      }
+    }
+  ]
+}

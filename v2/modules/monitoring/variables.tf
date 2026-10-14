@@ -105,3 +105,15 @@ variable "scrape_targets" {
   }))
   default = []
 }
+
+variable "alb_arn_suffixes" {
+  description = "인프라 대시보드의 ALB 지표 차원(LoadBalancer = arn suffix)"
+  type = object({
+    prod    = string
+    nonprod = string
+  })
+  default = {
+    prod    = ""
+    nonprod = ""
+  }
+}

@@ -116,6 +116,7 @@ module "monitoring" {
   loki_retention_days       = var.monitoring_loki_retention_days
   scrape_targets            = local.monitoring_scrape_targets
   grafana_root_url          = local.grafana_root_url
+  alb_arn_suffixes          = local.alb_arn_suffixes
 
   tags = { Component = "monitoring" }
 }
