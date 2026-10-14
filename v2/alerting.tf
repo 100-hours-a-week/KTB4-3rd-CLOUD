@@ -37,3 +37,194 @@ resource "aws_sns_topic_subscription" "alert_email" {
   protocol  = "email"
   endpoint  = each.value
 }
+
+# -----------------------------------------------------------------------------
+# 인프라 알람 (모니터링 스택과 독립)
+#   이름은 모두 "<project>-" 로 시작한다 → EventBridge 규칙이 이 접두어로 Discord에 보낸다
+# -----------------------------------------------------------------------------
+
+locals {
+  # Prod ALB / Non-Prod ALB의 CloudWatch LoadBalancer 차원 값
+  alb_arn_suffixes = {
+    prod    = aws_lb.public.arn_suffix
+    nonprod = aws_lb.nonprod.arn_suffix
+  }
+
+  alarm_stage_services = {
+    for k, s in local.ecs_service_instances : k => s
+    if local.alerting_enabled && contains(var.alert_stages, s.stage)
+  }
+
+  simple_alarms = merge(
+    # 모니터링 호스트 하트비트 (moyeota-monitoring-sync가 1분마다 보낸다)
+    #   지표가 끊기면(호스트 다운·동기화 중단) treat_missing_data = breaching으로 알람이 울린다
+    local.alerting_enabled && local.monitoring_enabled ? {
+      for c in ["prometheus", "loki", "grafana"] : "monitoring-${c}-down" => {
+        description = "모니터링 ${c}가 3분 연속 응답하지 않거나 하트비트가 끊김"
+        namespace   = module.monitoring[0].heartbeat_namespace
+        metric      = "ComponentHealthy"
+        dimensions  = { Component = c }
+        statistic   = "Minimum"
+        period      = 60
+        evaluations = 3
+        threshold   = 1
+        comparison  = "LessThanThreshold"
+        missing     = "breaching"
+        stage       = "monitoring"
+      }
+    } : {},
+
+    local.alerting_enabled && local.monitoring_enabled ? {
+      "monitoring-data-disk-high" = {
+        description = "모니터링 호스트 데이터 디스크 사용률 80% 초과 (Prometheus TSDB·Loki WAL)"
+        namespace   = module.monitoring[0].heartbeat_namespace
+        metric      = "DataDiskUsedPercent"
+        dimensions  = { Component = "host" }
+        statistic   = "Maximum"
+        period      = 300
+        evaluations = 1
+        threshold   = 80
+        comparison  = "GreaterThanThreshold"
+        missing     = "notBreaching"
+        stage       = "monitoring"
+      }
+      "monitoring-host-status-check" = {
+        description = "모니터링 호스트 EC2 상태 검사 실패"
+        namespace   = "AWS/EC2"
+        metric      = "StatusCheckFailed"
+        dimensions  = { InstanceId = module.monitoring[0].instance_id }
+        statistic   = "Maximum"
+        period      = 60
+        evaluations = 2
+        threshold   = 1
+        comparison  = "GreaterThanOrEqualToThreshold"
+        missing     = "notBreaching"
+        stage       = "monitoring"
+      }
+    } : {},
+
+    # Prod ALB 자체 5xx (대상이 없거나 응답하지 않을 때 ALB가 만드는 502·503·504)
+    local.alerting_enabled && contains(var.alert_stages, "prod") ? {
+      "prod-alb-elb-5xx" = {
+        description = "Prod ALB 자체 5xx가 5분 동안 ${var.alert_alb_5xx_threshold}건 초과"
+        namespace   = "AWS/ApplicationELB"
+        metric      = "HTTPCode_ELB_5XX_Count"
+        dimensions  = { LoadBalancer = local.alb_arn_suffixes.prod }
+        statistic   = "Sum"
+        period      = 300
+        evaluations = 1
+        threshold   = var.alert_alb_5xx_threshold
+        comparison  = "GreaterThanThreshold"
+        missing     = "notBreaching"
+        stage       = "prod"
+      }
+    } : {},
+
+    # ECS 서비스 대상 그룹에 비정상 대상이 3분 연속 존재
+    {
+      for k, s in local.alarm_stage_services : "${k}-unhealthy-targets" => {
+        description = "${k} 대상 그룹에 비정상(UnHealthy) 대상이 3분 연속 존재"
+        namespace   = "AWS/ApplicationELB"
+        metric      = "UnHealthyHostCount"
+        dimensions = {
+          TargetGroup  = module.ecs_service[k].target_group_arn_suffix
+          LoadBalancer = local.alb_arn_suffixes[s.alb.alb_key]
+        }
+        statistic   = "Maximum"
+        period      = 60
+        evaluations = 3
+        threshold   = 0
+        comparison  = "GreaterThanThreshold"
+        missing     = "notBreaching"
+        stage       = s.stage
+      } if s.alb != null
+    },
+  )
+
+  # ECS 태스크 수: Running < Desired 가 5분 연속 (배포·교체 중 짧은 차이는 넘긴다)
+  #   ECS/ContainerInsights 지표라 Container Insights를 켠 스테이지(stg·prod)만 만든다
+  task_count_alarms = {
+    for k, s in local.alarm_stage_services : k => s
+    if local.ecs_stage_settings[s.stage].container_insights != "disabled"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "infra" {
+  for_each = local.simple_alarms
+
+  alarm_name          = "${var.project_name}-${each.key}"
+  alarm_description   = each.value.description
+  namespace           = each.value.namespace
+  metric_name         = each.value.metric
+  dimensions          = each.value.dimensions
+  statistic           = each.value.statistic
+  period              = each.value.period
+  evaluation_periods  = each.value.evaluations
+  datapoints_to_alarm = each.value.evaluations
+  threshold           = each.value.threshold
+  comparison_operator = each.value.comparison
+  treat_missing_data  = each.value.missing
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Stage = each.value.stage
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "ecs_tasks_below_desired" {
+  for_each = local.task_count_alarms
+
+  alarm_name          = "${var.project_name}-${each.key}-tasks-below-desired"
+  alarm_description   = "${each.value.stage} ${each.value.service} 실행 태스크 수가 5분 연속 desired보다 적음"
+  evaluation_periods  = 5
+  datapoints_to_alarm = 5
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+
+  metric_query {
+    id          = "missing"
+    expression  = "desired - running"
+    label       = "Desired - Running"
+    return_data = true
+  }
+
+  metric_query {
+    id = "desired"
+
+    metric {
+      namespace   = "ECS/ContainerInsights"
+      metric_name = "DesiredTaskCount"
+      period      = 60
+      stat        = "Average"
+      dimensions = {
+        ClusterName = module.ecs_cluster[each.value.stage].cluster_name
+        ServiceName = module.ecs_service[each.key].service_name
+      }
+    }
+  }
+
+  metric_query {
+    id = "running"
+
+    metric {
+      namespace   = "ECS/ContainerInsights"
+      metric_name = "RunningTaskCount"
+      period      = 60
+      stat        = "Average"
+      dimensions = {
+        ClusterName = module.ecs_cluster[each.value.stage].cluster_name
+        ServiceName = module.ecs_service[each.key].service_name
+      }
+    }
+  }
+
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
+
+  tags = {
+    Stage = each.value.stage
+  }
+}
