@@ -729,3 +729,40 @@ variable "monitoring_grafana_certificate_create" {
     error_message = "monitoring_grafana_certificate_create = true 이면 monitoring_grafana_host, route53_zone_name, Non-Prod HTTPS 리스너(nonprod_alb_certificate_arn 또는 nonprod_acm_certificate_create)가 필요하다."
   }
 }
+
+variable "monitoring_alloy_stages" {
+  description = <<-EOT
+    Alloy DAEMON을 띄워 Loki로 로그를 보낼 ECS 스테이지. ecs_stages에 없는 값은 무시한다.
+    처음에는 ["stg"]로 dual logging(docker logs) 동작과 호스트 메모리 여유를 확인한 뒤 dev·prod로 넓힌다.
+  EOT
+  type        = list(string)
+  default     = ["dev", "stg", "prod"]
+
+  validation {
+    condition     = alltrue([for s in var.monitoring_alloy_stages : contains(["dev", "stg", "prod"], s)])
+    error_message = "monitoring_alloy_stages values must be dev, stg or prod."
+  }
+}
+
+variable "monitoring_alloy_image" {
+  description = "Grafana Alloy 이미지 (버전 고정). docker.sock을 마운트하므로 latest를 쓰지 않는다."
+  type        = string
+  default     = "grafana/alloy:v1.20.1"
+}
+
+variable "monitoring_alloy_memory" {
+  description = "Alloy 컨테이너 메모리(MiB). reservation은 배치 시 예약, limit을 넘으면 컨테이너가 OOM으로 재시작된다."
+  type = object({
+    reservation = number
+    limit       = number
+  })
+  default = {
+    reservation = 128
+    limit       = 256
+  }
+
+  validation {
+    condition     = var.monitoring_alloy_memory.reservation >= 64 && var.monitoring_alloy_memory.limit >= var.monitoring_alloy_memory.reservation
+    error_message = "monitoring_alloy_memory.reservation must be >= 64 and limit must be >= reservation."
+  }
+}
