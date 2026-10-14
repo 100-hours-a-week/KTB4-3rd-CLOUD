@@ -322,6 +322,15 @@ resource "aws_ecs_service" "this" {
     }
   }
 
+  # Cloud Map DNS(A 레코드) 등록 — 모니터링 Prometheus의 dns_sd_configs 대상
+  dynamic "service_registries" {
+    for_each = var.service_registry_arn == null ? [] : [var.service_registry_arn]
+
+    content {
+      registry_arn = service_registries.value
+    }
+  }
+
   dynamic "load_balancer" {
     for_each = local.lb_enabled ? [1] : []
 
