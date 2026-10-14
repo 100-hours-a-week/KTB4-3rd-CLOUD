@@ -143,10 +143,23 @@ locals {
 
   # ECS 태스크 수: Running < Desired 가 5분 연속 (배포·교체 중 짧은 차이는 넘긴다)
   #   ECS/ContainerInsights 지표라 Container Insights를 켠 스테이지(stg·prod)만 만든다
-  task_count_alarms = {
-    for k, s in local.alarm_stage_services : k => s
-    if local.ecs_stage_settings[s.stage].container_insights != "disabled"
-  }
+  #   Alloy DAEMON은 desired = 컨테이너 인스턴스 수라, 메모리 여유가 없어 못 뜬 호스트가 있으면 울린다
+  task_count_alarms = merge(
+    {
+      for k, s in local.alarm_stage_services : k => {
+        stage        = s.stage
+        service      = s.service
+        service_name = module.ecs_service[k].service_name
+      } if local.ecs_stage_settings[s.stage].container_insights != "disabled"
+    },
+    {
+      for stage in local.monitoring_log_stages : "${stage}-alloy" => {
+        stage        = stage
+        service      = "alloy"
+        service_name = aws_ecs_service.alloy[stage].name
+      } if local.alerting_enabled && contains(var.alert_stages, stage) && local.ecs_stage_settings[stage].container_insights != "disabled"
+    },
+  )
 }
 
 resource "aws_cloudwatch_metric_alarm" "infra" {
@@ -201,7 +214,7 @@ resource "aws_cloudwatch_metric_alarm" "ecs_tasks_below_desired" {
       stat        = "Average"
       dimensions = {
         ClusterName = module.ecs_cluster[each.value.stage].cluster_name
-        ServiceName = module.ecs_service[each.key].service_name
+        ServiceName = each.value.service_name
       }
     }
   }
@@ -216,7 +229,7 @@ resource "aws_cloudwatch_metric_alarm" "ecs_tasks_below_desired" {
       stat        = "Average"
       dimensions = {
         ClusterName = module.ecs_cluster[each.value.stage].cluster_name
-        ServiceName = module.ecs_service[each.key].service_name
+        ServiceName = each.value.service_name
       }
     }
   }
