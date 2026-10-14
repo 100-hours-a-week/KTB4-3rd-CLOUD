@@ -422,7 +422,7 @@ variable "chat_fanout_schema_version" {
 }
 
 variable "alarm_sns_topic_arn" {
-  description = "브로커 CloudWatch 알람을 보낼 SNS 토픽. null이면 알람 상태만 남는다."
+  description = "브로커 CloudWatch 알람을 보낼 기존 SNS 토픽. null이면 alerting_enabled로 만든 <project>-alerts 토픽을 쓰고, 그것도 없으면 알람 상태만 남는다."
   type        = string
   default     = null
   nullable    = true
@@ -614,4 +614,45 @@ variable "monitoring_loki_retention_days" {
     prod    = 30
     nonprod = 7
   }
+}
+
+# -----------------------------------------------------------------------------
+# 장애 알림 (alerting.tf) — 모니터링 스택과 독립된 CloudWatch Alarm 경로
+# -----------------------------------------------------------------------------
+
+variable "alerting_enabled" {
+  description = <<-EOT
+    true면 공용 SNS 토픽(<project>-alerts)과 인프라 알람(ALB·대상 그룹·ECS 태스크 수·모니터링 호스트 하트비트)을 만든다.
+    alarm_sns_topic_arn을 따로 지정하지 않으면 Redis 브로커 알람도 이 토픽으로 보낸다.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "alert_emails" {
+  description = "SNS 이메일 구독 주소. 생성 후 각 메일함에서 구독 확인(Confirm subscription)을 눌러야 알림이 간다."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for e in var.alert_emails : can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", e))])
+    error_message = "alert_emails must contain valid email addresses."
+  }
+}
+
+variable "alert_stages" {
+  description = "ALB 대상 그룹·ECS 태스크 수 알람을 만들 스테이지. dev는 09–24시에만 떠 있어 기본값에서 뺀다."
+  type        = list(string)
+  default     = ["prod"]
+
+  validation {
+    condition     = alltrue([for s in var.alert_stages : contains(["dev", "stg", "prod"], s)])
+    error_message = "alert_stages may only contain dev, stg, prod."
+  }
+}
+
+variable "alert_alb_5xx_threshold" {
+  description = "Prod ALB 자체 5xx(HTTPCode_ELB_5XX_Count) 5분 합계 임계값"
+  type        = number
+  default     = 10
 }
