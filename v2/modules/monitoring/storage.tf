@@ -34,9 +34,9 @@ resource "aws_s3_bucket" "this" {
 }
 
 resource "aws_s3_bucket_public_access_block" "this" {
-  for_each = aws_s3_bucket.this
+  for_each = local.buckets
 
-  bucket                  = each.value.id
+  bucket                  = aws_s3_bucket.this[each.key].id
   block_public_acls       = true
   block_public_policy     = true
   ignore_public_acls      = true
@@ -44,9 +44,9 @@ resource "aws_s3_bucket_public_access_block" "this" {
 }
 
 resource "aws_s3_bucket_ownership_controls" "this" {
-  for_each = aws_s3_bucket.this
+  for_each = local.buckets
 
-  bucket = each.value.id
+  bucket = aws_s3_bucket.this[each.key].id
 
   rule {
     object_ownership = "BucketOwnerEnforced"
@@ -54,9 +54,9 @@ resource "aws_s3_bucket_ownership_controls" "this" {
 }
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
-  for_each = aws_s3_bucket.this
+  for_each = local.buckets
 
-  bucket = each.value.id
+  bucket = aws_s3_bucket.this[each.key].id
 
   rule {
     apply_server_side_encryption_by_default {
@@ -112,15 +112,15 @@ resource "aws_s3_bucket_lifecycle_configuration" "config" {
 
 # TLS가 아닌 요청 거부
 data "aws_iam_policy_document" "bucket_tls_only" {
-  for_each = aws_s3_bucket.this
+  for_each = local.buckets
 
   statement {
     sid     = "DenyInsecureTransport"
     effect  = "Deny"
     actions = ["s3:*"]
     resources = [
-      each.value.arn,
-      "${each.value.arn}/*",
+      aws_s3_bucket.this[each.key].arn,
+      "${aws_s3_bucket.this[each.key].arn}/*",
     ]
 
     principals {
@@ -137,9 +137,9 @@ data "aws_iam_policy_document" "bucket_tls_only" {
 }
 
 resource "aws_s3_bucket_policy" "this" {
-  for_each = aws_s3_bucket.this
+  for_each = local.buckets
 
-  bucket = each.value.id
+  bucket = aws_s3_bucket.this[each.key].id
   policy = data.aws_iam_policy_document.bucket_tls_only[each.key].json
 
   depends_on = [aws_s3_bucket_public_access_block.this]

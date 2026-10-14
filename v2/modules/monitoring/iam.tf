@@ -47,7 +47,7 @@ data "aws_iam_policy_document" "host" {
   statement {
     sid       = "ListMonitoringBuckets"
     actions   = ["s3:ListBucket", "s3:GetBucketLocation"]
-    resources = [for b in aws_s3_bucket.this : b.arn]
+    resources = [for k in keys(local.buckets) : aws_s3_bucket.this[k].arn]
   }
 
   statement {
