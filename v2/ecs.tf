@@ -217,6 +217,9 @@ module "ecs_service" {
 
   autoscaling = each.value.autoscaling
 
+  # 중앙 모니터링 메트릭 수집 대상이면 Cloud Map에 태스크 A 레코드를 등록한다 (monitoring.tf)
+  service_registry_arn = try(aws_service_discovery_service.metrics[each.key].arn, null)
+
   service_connect = (
     contains(var.ecs_service_connect_stages, each.value.stage) &&
     lookup(local.ecs_service_connect_roles, each.value.service, null) != null

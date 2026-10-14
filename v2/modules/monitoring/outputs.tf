@@ -56,3 +56,8 @@ output "config_object_keys" {
   description = "S3 설정 버킷에 올라간 스택 설정 파일"
   value       = sort([for o in aws_s3_object.config : o.key])
 }
+
+output "prometheus_config" {
+  description = "렌더링된 prometheus.yml (검토용)"
+  value       = local.config_files["prometheus/prometheus.yml"]
+}

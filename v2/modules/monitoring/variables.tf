@@ -92,3 +92,16 @@ variable "grafana_root_url" {
   type        = string
   default     = ""
 }
+
+variable "scrape_targets" {
+  description = "Prometheus dns_sd_configs 대상 (루트 monitoring.tf가 Cloud Map 이름으로 만든다)"
+  type = list(object({
+    job          = string
+    stage        = string
+    service      = string
+    dns_name     = string
+    port         = number
+    metrics_path = string
+  }))
+  default = []
+}
