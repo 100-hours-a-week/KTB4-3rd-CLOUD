@@ -125,3 +125,21 @@ resource "aws_ecs_service" "alloy" {
     Component = "monitoring"
   }
 }
+
+# Loki 전송 유실 감지: loki.write가 재시도를 모두 실패하면 "final error sending batch, no retries left, dropping data"를 남긴다
+#   Alloy 자신의 로그(awslogs)에서 이 문구를 세어 CloudWatch 지표로 만든다 → alerting.tf의 <stage>-alloy-log-dropped 알람
+#   (프로세스 중단은 tasks-below-desired 알람, Loki 중단은 모니터링 하트비트 알람이 잡는다)
+resource "aws_cloudwatch_log_metric_filter" "alloy_dropped" {
+  for_each = local.monitoring_log_stages
+
+  name           = "${var.project_name}-${each.key}-alloy-dropped"
+  log_group_name = aws_cloudwatch_log_group.alloy[each.key].name
+  pattern        = "\"final error sending batch\""
+
+  metric_transformation {
+    name      = "AlloyDroppedBatches-${each.key}"
+    namespace = module.monitoring[0].heartbeat_namespace
+    value     = "1"
+    unit      = "Count"
+  }
+}
