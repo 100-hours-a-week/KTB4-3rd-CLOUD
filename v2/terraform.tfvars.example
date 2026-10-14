@@ -16,7 +16,12 @@ subnet_cidrs = {
   dev      = "10.20.41.0/24"
   data_a   = "10.20.100.0/24"
   data_b   = "10.20.101.0/24"
+  # 모니터링 호스트 전용 서브넷 (선택). 비워 두면 모니터링 호스트는 app 서브넷에 둔다.
+  ops = "10.20.43.0/24"
 }
+
+# private 워크로드의 S3 트래픽을 NAT 대신 Gateway Endpoint로 보낸다
+s3_gateway_endpoint_enabled = true
 
 prod_app_instance_type       = "t3.small"
 prod_websocket_instance_type = "t3.medium"
@@ -104,3 +109,46 @@ github_app_repositories = ["KTB4-3rd-BE", "KTB4-3rd-FE"]
 ecs_service_connect_stages = []
 # 장애 주입 실험 템플릿 (실행 전까지 영향 없음). prod는 지정 불가.
 fis_stages = ["stg"]
+
+# 중앙 모니터링 (monitoring.tf) — PLG + Alloy
+#   켜기 전에 확인: subnet_cidrs.ops(선택), s3_gateway_endpoint_enabled
+#   켠 뒤 값 입력: /moyeota/v2/monitoring/{GRAFANA_ADMIN_PASSWORD,DISCORD_WEBHOOK_INCIDENT,DISCORD_WEBHOOK_ALERTS}
+monitoring_enabled = false
+monitoring_instance_type             = "m7i.large"
+monitoring_data_volume_size_gib      = 40
+monitoring_prometheus_retention_days = 15
+monitoring_loki_retention_days = {
+  prod    = 30
+  nonprod = 7
+}
+
+# 장애 알림 (alerting.tf) — 모니터링 스택과 독립된 CloudWatch Alarm 경로
+alerting_enabled        = false
+alert_emails            = [] # 예) ["cloud-team@example.com"] — 생성 후 메일에서 구독 확인
+alert_stages            = ["prod"]
+alert_alb_5xx_threshold = 10
+# DISCORD_WEBHOOK_INCIDENT 값을 SSM에 넣은 뒤 켠다
+alert_discord_enabled = false
+
+# 메트릭 수집 디스커버리 (monitoring.tf) — 공유 VPC의 enableDnsSupport·enableDnsHostnames가 켜져 있어야 한다
+monitoring_discovery_namespace = "monitor.moyeota.internal"
+
+# Grafana 접근 (monitoring_access.tf) — null이면 SSM 포트 포워딩(output monitoring.grafana_forward)만 쓴다
+#   Non-Prod ALB SG가 admin_cidrs·dev_qa_cidrs만 허용하므로 팀 CIDR에서만 열린다
+monitoring_grafana_host               = null # 예) "monitor.moyeota.com"
+monitoring_grafana_listener_priority  = 50
+monitoring_grafana_dns_record         = false
+monitoring_grafana_certificate_create = false
+
+# 로그 수집 (alloy.tf) — 스테이지 클러스터마다 Alloy DAEMON 1개 (host 네트워크, docker.sock 읽기 전용 마운트)
+#   처음에는 ["stg"]로 docker logs(dual logging) 동작·호스트 메모리 여유를 확인한 뒤 넓힌다
+monitoring_alloy_stages = ["dev", "stg", "prod"]
+monitoring_alloy_image  = "grafana/alloy:v1.20.1"
+monitoring_alloy_memory = {
+  reservation = 128
+  limit       = 256
+}
+
+# Grafana 알림 (modules/monitoring/templates/grafana/alerting.yaml.tftpl) — 서비스 지표 규칙 → Discord
+#   대상 스테이지는 alert_stages. SSM DISCORD_WEBHOOK_INCIDENT·DISCORD_WEBHOOK_ALERTS 값을 넣은 뒤 켠다
+monitoring_grafana_alerting_enabled = false

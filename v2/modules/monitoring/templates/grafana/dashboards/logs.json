@@ -1,0 +1,244 @@
+{
+  "uid": "moyeota-v2-logs",
+  "title": "V2 로그",
+  "description": "ECS 컨테이너 로그 (Alloy → Loki). 추적 ID(X-Amzn-Trace-Id)·사용자 ID 등은 검색어로 찾는다.",
+  "tags": [
+    "moyeota",
+    "v2"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "1m",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "stage",
+        "label": "Stage",
+        "type": "custom",
+        "query": "prod,stg,dev",
+        "current": {
+          "text": "prod",
+          "value": "prod"
+        },
+        "options": [
+          {
+            "text": "prod",
+            "value": "prod",
+            "selected": true
+          },
+          {
+            "text": "stg",
+            "value": "stg",
+            "selected": false
+          },
+          {
+            "text": "dev",
+            "value": "dev",
+            "selected": false
+          }
+        ],
+        "hide": 0,
+        "multi": false,
+        "includeAll": false
+      },
+      {
+        "name": "service",
+        "label": "Service",
+        "type": "query",
+        "datasource": {
+          "type": "loki",
+          "uid": "loki"
+        },
+        "query": "label_values({stage=\"$stage\"}, service)",
+        "definition": "label_values({stage=\"$stage\"}, service)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": true,
+        "multi": true,
+        "hide": 0,
+        "current": {},
+        "options": [],
+        "allValue": ".+"
+      },
+      {
+        "name": "search",
+        "label": "검색어 (정규식)",
+        "type": "textbox",
+        "query": "",
+        "current": {
+          "text": "",
+          "value": ""
+        },
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "moyeota"
+      ],
+      "asDropdown": true,
+      "title": "Moyeota V2",
+      "includeVars": true,
+      "keepTime": true
+    }
+  ],
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "로그량",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (service) (count_over_time({stage=\"$stage\", service=~\"$service\"} |~ \"(?i)$search\" [1m]))",
+          "queryType": "range",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 1,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "에러 로그",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "sum by (service) (count_over_time({stage=\"$stage\", service=~\"$service\"} |= \"ERROR\" | json | __error__=\"\" | log_level=\"ERROR\" [1m]))",
+          "queryType": "range",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 2,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      }
+    },
+    {
+      "type": "logs",
+      "title": "로그",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "expr": "{stage=\"$stage\", service=~\"$service\"} |~ \"(?i)$search\"",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "dedupStrategy": "none"
+      },
+      "id": 3,
+      "gridPos": {
+        "h": 16,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      }
+    }
+  ]
+}

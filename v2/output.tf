@@ -132,3 +132,23 @@ output "fis_experiment_template_ids" {
     }
   }
 }
+
+output "monitoring" {
+  description = "중앙 모니터링 리소스 (monitoring_enabled = true일 때)"
+  value = local.monitoring_enabled ? {
+    logs_bucket     = module.monitoring[0].logs_bucket_name
+    config_bucket   = module.monitoring[0].config_bucket_name
+    ssm_parameters  = module.monitoring[0].ssm_parameter_names
+    host_role       = module.monitoring[0].host_role_name
+    instance_id     = module.monitoring[0].instance_id
+    private_ip      = module.monitoring[0].private_ip
+    ssm_session     = module.monitoring[0].ssm_session_command
+    grafana_forward = module.monitoring[0].grafana_port_forward_command
+    grafana_url     = local.grafana_access_enabled ? local.grafana_root_url : null
+  } : null
+}
+
+output "alerts_sns_topic_arn" {
+  description = "인프라 알람 SNS 토픽 (alerting_enabled = true일 때)"
+  value       = try(aws_sns_topic.alerts[0].arn, null)
+}

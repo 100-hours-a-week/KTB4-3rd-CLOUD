@@ -303,3 +303,14 @@ variable "service_connect" {
   })
   default = null
 }
+
+variable "service_registry_arn" {
+  description = <<-EOT
+    (선택) Cloud Map 서비스 디스커버리 레지스트리 ARN. 지정하면 awsvpc 태스크마다 A 레코드가 등록된다.
+    중앙 모니터링 Prometheus가 이 DNS 이름으로 태스크를 찾아 메트릭을 수집한다 (monitoring.tf).
+    Service Connect와 같은 이름을 쓰면 Cloud Map 등록이 충돌하므로 별도 네임스페이스·이름을 쓴다.
+  EOT
+  type        = string
+  default     = null
+  nullable    = true
+}
