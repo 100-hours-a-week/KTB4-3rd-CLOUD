@@ -9,7 +9,7 @@ locals {
   az_a = var.availability_zones[0]
   az_b = var.availability_zones[1]
 
-  subnet_specs = {
+  subnet_specs = merge({
     public_a = {
       cidr  = var.subnet_cidrs.public_a
       az    = local.az_a
@@ -46,7 +46,19 @@ locals {
       tier  = "private-data"
       label = "data-b"
     }
-  }
+    },
+    # 모니터링 호스트 전용 (Prometheus · Loki · Grafana). 감시 대상인 ECS 서브넷과 분리한다.
+    var.subnet_cidrs.ops == null ? {} : {
+      ops = {
+        cidr  = var.subnet_cidrs.ops
+        az    = local.az_a
+        tier  = "private-ops"
+        label = "ops-a"
+      }
+  })
+
+  # NAT 경로를 쓰는 private 워크로드 서브넷 (app·dev + 선택 ops)
+  private_workload_subnet_keys = concat(["app", "dev"], var.subnet_cidrs.ops == null ? [] : ["ops"])
 
   hosts = {
     prod-app = {
