@@ -671,3 +671,12 @@ variable "alert_discord_enabled" {
     error_message = "alert_discord_enabled = true 이면 alerting_enabled와 monitoring_enabled(웹훅 SSM 파라미터)가 모두 true여야 한다."
   }
 }
+
+variable "monitoring_discovery_namespace" {
+  description = <<-EOT
+    메트릭 수집용 Cloud Map 프라이빗 DNS 네임스페이스. ECS 서비스 태스크가 <stage>-<service>-metrics.<이 이름> A 레코드로 등록된다.
+    Service Connect 네임스페이스(<stage>.moyeota-v2.local, HTTP)와 별개다. 공유 VPC의 DNS 지원·호스트 이름 속성이 켜져 있어야 한다.
+  EOT
+  type        = string
+  default     = "monitor.moyeota.internal"
+}

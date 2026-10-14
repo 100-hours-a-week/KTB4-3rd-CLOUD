@@ -18,7 +18,8 @@ locals {
       })
 
       "prometheus/prometheus.yml" = templatefile("${path.module}/templates/prometheus.yml.tftpl", {
-        project_name = var.project_name
+        project_name   = var.project_name
+        scrape_targets = var.scrape_targets
       })
 
       "loki/loki.yaml" = templatefile("${path.module}/templates/loki.yaml.tftpl", {

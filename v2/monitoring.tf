@@ -112,6 +112,66 @@ module "monitoring" {
 
   prometheus_retention_days = var.monitoring_prometheus_retention_days
   loki_retention_days       = var.monitoring_loki_retention_days
+  scrape_targets            = local.monitoring_scrape_targets
 
   tags = { Component = "monitoring" }
+}
+
+# -----------------------------------------------------------------------------
+# 메트릭 수집 대상 디스커버리 (Cloud Map 프라이빗 DNS)
+#   ECS 태스크는 awsvpc라 배포·스케일링마다 IP가 바뀐다.
+#   ECS 서비스 디스커버리가 태스크마다 A 레코드를 등록·해제하고, Prometheus는 dns_sd_configs로 이 이름을 조회한다.
+#   (AWS「Prometheus metric collection on Amazon ECS」솔루션과 같은 scrape 방식)
+#   - 컨테이너 헬스체크가 실패한 태스크는 디스커버리 인스턴스에서 해제된다
+#   - Cloud Map 리소스는 ECS가 자동 정리하지 않으므로 이 파일로만 관리한다
+# -----------------------------------------------------------------------------
+
+resource "aws_service_discovery_private_dns_namespace" "metrics" {
+  count = local.monitoring_enabled ? 1 : 0
+
+  name        = var.monitoring_discovery_namespace
+  description = "Prometheus scrape discovery for ${var.project_name} ECS tasks"
+  vpc         = data.aws_vpc.shared.id
+
+  tags = {
+    Name = "${var.project_name}-metrics-discovery"
+  }
+}
+
+resource "aws_service_discovery_service" "metrics" {
+  for_each = local.monitoring_scrape_instances
+
+  # Service Connect 이름(rest, websocket, fastapi)과 겹치지 않게 <stage>-<service>-metrics
+  name = "${each.key}-metrics"
+
+  dns_config {
+    namespace_id   = aws_service_discovery_private_dns_namespace.metrics[0].id
+    routing_policy = "MULTIVALUE"
+
+    dns_records {
+      type = "A"
+      ttl  = 10
+    }
+  }
+
+  health_check_custom_config {}
+
+  tags = {
+    Stage   = each.value.stage
+    Service = each.value.service
+  }
+}
+
+locals {
+  # Prometheus scrape 설정 (modules/monitoring → prometheus.yml dns_sd_configs)
+  monitoring_scrape_targets = [
+    for k, s in local.monitoring_scrape_instances : {
+      job          = k
+      stage        = s.stage
+      service      = s.service
+      dns_name     = "${aws_service_discovery_service.metrics[k].name}.${var.monitoring_discovery_namespace}"
+      port         = s.port
+      metrics_path = s.metrics_path
+    }
+  ]
 }
