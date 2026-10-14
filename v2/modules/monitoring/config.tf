@@ -3,7 +3,7 @@
 #   모니터링 호스트의 moyeota-monitoring-sync가 1분마다 받아 반영한다
 #     prometheus/ 변경 → /-/reload,  loki/ 변경 → restart,  grafana/ 변경 → 재생성
 #   grafana/
-#     provisioning/datasources·dashboards           → 데이터소스·대시보드 폴더
+#     provisioning/datasources·dashboards·alerting  → 데이터소스·대시보드 폴더·알림 규칙
 #     dashboards/*.json                              → "Moyeota V2" 폴더의 대시보드 (UI 수정 불가, 파일로만 변경)
 #   terraform apply만으로 설정이 배포되고, 호스트는 교체하지 않는다.
 # =============================================================================
@@ -51,6 +51,13 @@ locals {
       for f in fileset("${path.module}/templates/grafana/dashboards", "*.json") :
       "grafana/dashboards/${f}" => file("${path.module}/templates/grafana/dashboards/${f}")
     },
+
+    # 알림 규칙·연락처·라우팅. 대상 스테이지가 없으면 올리지 않는다 (Discord 웹훅을 SSM에 넣은 뒤 켠다)
+    length(var.grafana_alert_stages) > 0 ? {
+      "grafana/provisioning/alerting/alerting.yaml" = templatefile("${path.module}/templates/grafana/alerting.yaml.tftpl", {
+        stage_regex = join("|", var.grafana_alert_stages)
+      })
+    } : {},
   )
 }
 

@@ -766,3 +766,12 @@ variable "monitoring_alloy_memory" {
     error_message = "monitoring_alloy_memory.reservation must be >= 64 and limit must be >= reservation."
   }
 }
+
+variable "monitoring_grafana_alerting_enabled" {
+  description = <<-EOT
+    true면 Grafana 알림(서비스 지표 규칙 → Discord #incident·#alerts)을 프로비저닝한다. 규칙 대상 스테이지는 alert_stages.
+    켜기 전에 SSM DISCORD_WEBHOOK_INCIDENT·DISCORD_WEBHOOK_ALERTS 값을 넣는다 (CHANGE_ME면 전송이 실패한다).
+  EOT
+  type        = bool
+  default     = false
+}

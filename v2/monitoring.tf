@@ -117,6 +117,7 @@ module "monitoring" {
   scrape_targets            = local.monitoring_scrape_targets
   grafana_root_url          = local.grafana_root_url
   alb_arn_suffixes          = local.alb_arn_suffixes
+  grafana_alert_stages      = var.monitoring_grafana_alerting_enabled ? var.alert_stages : []
 
   tags = { Component = "monitoring" }
 }

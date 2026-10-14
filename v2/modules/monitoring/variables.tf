@@ -117,3 +117,9 @@ variable "alb_arn_suffixes" {
     nonprod = ""
   }
 }
+
+variable "grafana_alert_stages" {
+  description = "Grafana 알림 규칙을 적용할 스테이지. 비어 있으면 알림 프로비저닝 파일을 올리지 않는다."
+  type        = list(string)
+  default     = []
+}
