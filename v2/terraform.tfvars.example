@@ -109,3 +109,8 @@ github_app_repositories = ["KTB4-3rd-BE", "KTB4-3rd-FE"]
 ecs_service_connect_stages = []
 # 장애 주입 실험 템플릿 (실행 전까지 영향 없음). prod는 지정 불가.
 fis_stages = ["stg"]
+
+# 중앙 모니터링 (monitoring.tf) — PLG + Alloy
+#   켜기 전에 확인: subnet_cidrs.ops(선택), s3_gateway_endpoint_enabled
+#   켠 뒤 값 입력: /moyeota/v2/monitoring/{GRAFANA_ADMIN_PASSWORD,DISCORD_WEBHOOK_INCIDENT,DISCORD_WEBHOOK_ALERTS}
+monitoring_enabled = false
