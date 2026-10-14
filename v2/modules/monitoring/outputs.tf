@@ -51,3 +51,8 @@ output "grafana_port_forward_command" {
   description = "ALB 호스트 규칙 없이 Grafana에 접속 (로컬 http://localhost:3000)"
   value       = "aws ssm start-session --target ${aws_instance.host.id} --document-name AWS-StartPortForwardingSession --parameters portNumber=3000,localPortNumber=3000"
 }
+
+output "config_object_keys" {
+  description = "S3 설정 버킷에 올라간 스택 설정 파일"
+  value       = sort([for o in aws_s3_object.config : o.key])
+}
