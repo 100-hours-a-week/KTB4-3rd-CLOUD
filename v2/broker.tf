@@ -206,7 +206,8 @@ resource "aws_vpc_security_group_ingress_rule" "dev_data_from_tasks" {
 }
 
 # -----------------------------------------------------------------------------
-# 알람 (노드별). alarm_sns_topic_arn이 없으면 상태만 남고 알림은 보내지 않는다.
+# 알람 (노드별). 알림 대상은 alerting.tf의 local.alarm_actions
+#   (alarm_sns_topic_arn → 없으면 alerting_enabled로 만든 <project>-alerts 토픽 → 둘 다 없으면 상태만 남는다)
 #   - EngineCPUUtilization : Redis는 단일 스레드 → 엔진 CPU가 fan-out 처리 한계
 #   - DatabaseMemoryUsagePercentage : Pub/Sub 출력 버퍼가 쌓이면 메모리가 오른다
 #   - NetworkBandwidthOutAllowanceExceeded : fan-out 송신량 = 발행량 × 구독 태스크 수.
@@ -260,8 +261,8 @@ resource "aws_cloudwatch_metric_alarm" "redis" {
     CacheClusterId = each.value.node_id
   }
 
-  alarm_actions = var.alarm_sns_topic_arn == null ? [] : [var.alarm_sns_topic_arn]
-  ok_actions    = var.alarm_sns_topic_arn == null ? [] : [var.alarm_sns_topic_arn]
+  alarm_actions = local.alarm_actions
+  ok_actions    = local.alarm_actions
 
   tags = {
     Stage = each.value.stage
