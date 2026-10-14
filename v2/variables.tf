@@ -680,3 +680,52 @@ variable "monitoring_discovery_namespace" {
   type        = string
   default     = "monitor.moyeota.internal"
 }
+
+variable "monitoring_grafana_host" {
+  description = <<-EOT
+    Grafana를 Non-Prod ALB 호스트 규칙으로 열 도메인 (예: monitor.moyeota.com). null이면 ALB에 붙이지 않고 SSM 포트 포워딩으로만 접속한다.
+    Non-Prod ALB SG가 admin_cidrs·dev_qa_cidrs만 허용하므로 팀 CIDR에서만 열린다. 로그인은 Grafana 계정으로 한다.
+  EOT
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "monitoring_grafana_listener_priority" {
+  description = "Non-Prod ALB 리스너 규칙 우선순위. ECS 규칙(stg 200~, dev 300~)보다 앞에 둔다."
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.monitoring_grafana_listener_priority >= 1 && var.monitoring_grafana_listener_priority < 200
+    error_message = "monitoring_grafana_listener_priority must be between 1 and 199 (ECS rules use 200+)."
+  }
+}
+
+variable "monitoring_grafana_dns_record" {
+  description = "true면 route53_zone_name에 monitoring_grafana_host → Non-Prod ALB ALIAS 레코드를 만든다."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.monitoring_grafana_dns_record || (var.monitoring_grafana_host != null && var.route53_zone_name != null)
+    error_message = "monitoring_grafana_dns_record = true 이면 monitoring_grafana_host와 route53_zone_name이 필요하다."
+  }
+}
+
+variable "monitoring_grafana_certificate_create" {
+  description = <<-EOT
+    true면 monitoring_grafana_host 전용 ACM 인증서를 DNS 검증으로 만들어 Non-Prod HTTPS 리스너에 추가 인증서(SNI)로 붙인다.
+    기존 Non-Prod 인증서(dev·stg SAN)에 도메인을 더하면 인증서가 교체되므로 따로 만든다.
+  EOT
+  type        = bool
+  default     = false
+
+  validation {
+    condition = !var.monitoring_grafana_certificate_create || (
+      var.monitoring_grafana_host != null && var.route53_zone_name != null &&
+      (var.nonprod_alb_certificate_arn != null || var.nonprod_acm_certificate_create)
+    )
+    error_message = "monitoring_grafana_certificate_create = true 이면 monitoring_grafana_host, route53_zone_name, Non-Prod HTTPS 리스너(nonprod_alb_certificate_arn 또는 nonprod_acm_certificate_create)가 필요하다."
+  }
+}
