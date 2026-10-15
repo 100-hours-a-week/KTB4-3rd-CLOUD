@@ -121,3 +121,11 @@ monitoring_loki_retention_days = {
   prod    = 30
   nonprod = 7
 }
+
+# 장애 알림 (alerting.tf) — 모니터링 스택과 독립된 CloudWatch Alarm 경로
+alerting_enabled        = false
+alert_emails            = [] # 예) ["cloud-team@example.com"] — 생성 후 메일에서 구독 확인
+alert_stages            = ["prod"]
+alert_alb_5xx_threshold = 10
+# DISCORD_WEBHOOK_INCIDENT 값을 SSM에 넣은 뒤 켠다
+alert_discord_enabled = false

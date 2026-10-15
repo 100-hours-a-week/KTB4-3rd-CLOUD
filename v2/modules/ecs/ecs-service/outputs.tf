@@ -23,3 +23,8 @@ output "target_group_arn" {
 output "log_group_name" {
   value = aws_cloudwatch_log_group.this.name
 }
+
+output "target_group_arn_suffix" {
+  description = "CloudWatch AWS/ApplicationELB 지표의 TargetGroup 차원 값"
+  value       = try(aws_lb_target_group.this[0].arn_suffix, null)
+}

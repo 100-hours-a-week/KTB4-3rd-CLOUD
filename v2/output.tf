@@ -146,3 +146,8 @@ output "monitoring" {
     grafana_forward = module.monitoring[0].grafana_port_forward_command
   } : null
 }
+
+output "alerts_sns_topic_arn" {
+  description = "인프라 알람 SNS 토픽 (alerting_enabled = true일 때)"
+  value       = try(aws_sns_topic.alerts[0].arn, null)
+}
