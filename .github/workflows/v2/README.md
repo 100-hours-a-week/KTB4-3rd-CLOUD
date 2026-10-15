@@ -1,14 +1,16 @@
-# V2 BE·FE CI/CD 워크플로 (템플릿)
+# V2 BE·FE·AI CI/CD 워크플로 (템플릿)
 
 GitHub Actions는 `.github/workflows/` 바로 아래 파일만 실행하므로, 이 폴더의 파일은 **이 레포에서 실행되지 않는다.**
-앱 레포(`KTB4-3rd-BE`, `KTB4-3rd-FE`)의 `.github/workflows/`로 복사해서 쓴다.
+앱 레포(`KTB4-3rd-BE`, `KTB4-3rd-FE`, `KTB4-3rd-AI`)의 `.github/workflows/`로 복사해서 쓴다.
 
 | 파일 | 복사 위치 | 트리거 |
 |---|---|---|
 | `v2-be-{dev,stg,prod}-cd.yaml` | KTB4-3rd-BE | `workflow_run: BE CI` (dev / release/** / main) |
 | `v2-fe-dev-ci.yaml` | KTB4-3rd-FE | push·PR (develop / main / release/**) |
 | `v2-fe-{dev,stg,prod}-cd.yaml` | KTB4-3rd-FE | `workflow_run: FE CI` |
-| `../../actions/ecs-deploy/action.yml` | KTB4-3rd-BE, KTB4-3rd-FE의 `.github/actions/ecs-deploy/action.yml` | CD가 로컬 action으로 사용 |
+| `v2-ai-ci.yaml` | KTB4-3rd-AI | push·PR (develop / main / release/**) |
+| `v2-ai-{dev,stg,prod}-cd.yaml` | KTB4-3rd-AI | `workflow_run: AI CI` |
+| `../../actions/ecs-deploy/action.yml` | KTB4-3rd-BE, KTB4-3rd-FE, KTB4-3rd-AI의 `.github/actions/ecs-deploy/action.yml` | CD가 로컬 action으로 사용 |
 
 ## 배포 액션
 
@@ -56,3 +58,26 @@ CD 워크플로는 **앱 레포 안에 복사한** composite action을 로컬 �
   최초 이미지(digest)를 넣고 apply한 뒤부터는 CD가 Task Definition을 갱신한다 (`ignore_changes = [task_definition]`).
 - V2 확인은 DNS를 바꾸지 않고 `curl --resolve dev.moyeota.com:443:<Non-Prod ALB IP> https://dev.moyeota.com/...`로 한다.
 - DNS 전환 시: `nonprod_dns_records`로 ALIAS 생성 → V1 `dev-cd.yaml` 삭제 → FE CI를 `v2-fe-dev-ci.yaml`로 교체.
+
+## AI(FastAPI) 연결
+
+BE·FE와 같은 흐름이다: `develop` → Dev, `release/vX.Y.Z` → Stg(검증 태그 `stg-*`), `main` → Prod(Stg digest 승격, 재빌드 없음).
+ECS 서비스·컨테이너 이름은 `fastapi`, ECR은 `moyeota/ai`.
+
+### CLOUD(Terraform)
+- `v2/variables.tf` `github_app_repositories`에 `KTB4-3rd-AI` 추가 → apply 후 Deploy Role이 AI 레포 environment를 신뢰한다.
+- `v2/ssm.tf` `ai` 그룹에 `OPENAI_API_KEY` 추가 → apply 후 값 입력:
+  `aws ssm put-parameter --overwrite --type SecureString --name /moyeota/v2/dev/ai/OPENAI_API_KEY --value '<key>'`
+- 최초 1회: `v2/terraform.tfvars`의 `ecs_container_images.dev.fastapi`에 첫 이미지(digest)를 넣고 apply해 Dev `fastapi` 서비스를 만든다.
+  이후 Task Definition은 CD가 갱신한다. (첫 digest는 AI CI가 develop에서 처음 push한 `dev-*` 태그로 확인)
+- CI Role(V1 `infra/iam.tf`)은 이미 `KTB4-3rd-AI`의 main·develop·release/* 를 신뢰하므로 변경 없음.
+
+### AI 레포
+- 복사: `.github/workflows/ci.yaml`(← `v2-ai-ci.yaml`, 워크플로 이름 `AI CI` 유지), `v2-ai-{dev,stg,prod}-cd.yaml`,
+  `.github/actions/ecs-deploy/action.yml`. CD가 쓰는 action 사본은 **main**에 있어야 한다.
+- 필요 조건 (CI가 여기서 실패한다)
+  - 루트 `Dockerfile` — 현재 `Dockerfile.example`만 있다. 검토 후 `Dockerfile`로 확정.
+  - `GET /health` → 200 — ALB·ECS 헬스체크 경로(`fastapi_health_path`). 현재 `feat/congestion-analysis`에만 있다.
+  - (모니터링) `GET /metrics` — Prometheus scrape·FastAPI 5xx 알림이 이 경로를 본다 (`prometheus-fastapi-instrumentator`).
+- Environments `dev` / `staging` / `production` + 각 `ECS_DEPLOY_ROLE_ARN` secret
+- Repository secret `AWS_ROLE_TO_ASSUME`(CI Role), vars `AWS_REGION`, `ECR_REGISTRY`, `ECR_REPOSITORY=moyeota/ai`

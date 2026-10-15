@@ -66,7 +66,10 @@ locals {
       "SENTRY_ENVIRONMENT",
       "SENTRY_TRACES_SAMPLE_RATE",
     ]
-    ai = []
+    ai = [
+      # luna(OpenAI). IMAGE_DEVICE는 넣지 않는다 → 미설정 시 off(v2, luna만 사용)
+      "OPENAI_API_KEY",
+    ]
   }
 
   # ECS 서비스 → 주입받을 그룹. rest·websocket은 같은 backend 값을 공유한다.
