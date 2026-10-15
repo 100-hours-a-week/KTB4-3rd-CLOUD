@@ -159,11 +159,19 @@ resource "aws_service_discovery_service" "metrics" {
     }
   }
 
+  # ECS가 태스크 헬스 상태를 Cloud Map에 반영하도록 커스텀 헬스체크를 켠다 (생성 시에만 의미 있음)
   health_check_custom_config {}
 
   tags = {
     Stage   = each.value.stage
     Service = each.value.service
+  }
+
+  lifecycle {
+    # AWS가 FailureThreshold를 더 이상 돌려주지 않아 provider가 이 블록을 빈 값([])으로 읽는다.
+    # 설정의 빈 블록과 계속 diff가 나고, 이 속성은 ForceNew라 apply마다 교체(삭제→생성)가 계획된다.
+    # 태스크가 등록돼 있으면 삭제가 ResourceInUse로 실패하므로 이 diff를 무시한다.
+    ignore_changes = [health_check_custom_config]
   }
 }
 
