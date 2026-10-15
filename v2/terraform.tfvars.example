@@ -114,3 +114,10 @@ fis_stages = ["stg"]
 #   켜기 전에 확인: subnet_cidrs.ops(선택), s3_gateway_endpoint_enabled
 #   켠 뒤 값 입력: /moyeota/v2/monitoring/{GRAFANA_ADMIN_PASSWORD,DISCORD_WEBHOOK_INCIDENT,DISCORD_WEBHOOK_ALERTS}
 monitoring_enabled = false
+monitoring_instance_type             = "m7i.large"
+monitoring_data_volume_size_gib      = 40
+monitoring_prometheus_retention_days = 15
+monitoring_loki_retention_days = {
+  prod    = 30
+  nonprod = 7
+}

@@ -1,0 +1,33 @@
+# Prometheus — 모니터링 호스트 (Terraform modules/monitoring이 생성, 직접 수정하지 않는다)
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+  external_labels:
+    monitor: ${project_name}
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # 모니터링 스택 자체
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+        labels:
+          stage: monitoring
+          service: prometheus
+
+  - job_name: loki
+    static_configs:
+      - targets: ["loki:3100"]
+        labels:
+          stage: monitoring
+          service: loki
+
+  - job_name: grafana
+    static_configs:
+      - targets: ["grafana:3000"]
+        labels:
+          stage: monitoring
+          service: grafana

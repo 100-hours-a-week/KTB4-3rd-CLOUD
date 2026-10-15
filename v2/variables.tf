@@ -580,3 +580,38 @@ variable "monitoring_enabled" {
   type        = bool
   default     = false
 }
+
+variable "monitoring_instance_type" {
+  description = "모니터링 호스트(Prometheus · Loki · Grafana) EC2 타입. loadtest-infra와 같은 m7i.large(2 vCPU · 8 GiB)에서 시작한다."
+  type        = string
+  default     = "m7i.large"
+}
+
+variable "monitoring_data_volume_size_gib" {
+  description = "모니터링 호스트 데이터 EBS (Prometheus TSDB · Loki WAL · Grafana DB)"
+  type        = number
+  default     = 40
+
+  validation {
+    condition     = var.monitoring_data_volume_size_gib >= 20
+    error_message = "monitoring_data_volume_size_gib must be at least 20 GiB."
+  }
+}
+
+variable "monitoring_prometheus_retention_days" {
+  description = "Prometheus 보존 기간(일). 장기 보존이 필요해지면 AMP·Mimir remote write를 검토한다."
+  type        = number
+  default     = 15
+}
+
+variable "monitoring_loki_retention_days" {
+  description = "Loki 로그 보존 기간(일). nonprod는 stage 라벨이 dev·stg인 로그에 적용된다."
+  type = object({
+    prod    = number
+    nonprod = number
+  })
+  default = {
+    prod    = 30
+    nonprod = 7
+  }
+}

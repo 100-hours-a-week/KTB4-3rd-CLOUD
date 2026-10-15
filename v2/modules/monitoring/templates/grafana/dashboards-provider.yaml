@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: moyeota-v2
+    orgId: 1
+    folder: Moyeota V2
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
