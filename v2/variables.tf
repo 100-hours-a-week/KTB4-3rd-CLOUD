@@ -307,7 +307,7 @@ variable "github_org_id" {
 }
 
 variable "github_cloud_repository" {
-  description = "ECS 배포 워크플로가 실행되는 레포. job의 environment(dev/stg/prod)로 스테이지별 Deploy Role이 구분된다."
+  description = "인프라 레포 이름. (미사용) Deploy Role OIDC sub는 github_app_repositories + github_repository_ids로 만든다."
   type        = string
   default     = "KTB4-3rd-CLOUD"
 }

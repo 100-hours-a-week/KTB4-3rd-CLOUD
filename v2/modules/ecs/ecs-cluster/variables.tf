@@ -82,7 +82,7 @@ variable "github_oidc_provider_arn" {
 variable "github_oidc_subjects" {
   description = <<-EOT
     이 스테이지 배포 Role을 Assume할 수 있는 GitHub OIDC sub 값.
-    예) repo:100-hours-a-week/KTB4-3rd-CLOUD:environment:prod
+    예) repo:100-hours-a-week@167328634/KTB4-3rd-BE@1344695611:environment:dev (불변 sub 형식)
     워크플로 job에 environment를 지정하면 sub가 environment 기준으로 발급된다.
   EOT
   type = list(string)
