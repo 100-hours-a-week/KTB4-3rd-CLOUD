@@ -21,3 +21,8 @@ crash.*.log
 /perf/
 /scripts/
 /issues/
+
+.github/workflows/template
+/v2/.dev-env.sh
+/Claude outputs/
+/v2/scripts/
