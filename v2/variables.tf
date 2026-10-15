@@ -549,21 +549,36 @@ variable "fis_stages" {
 
 variable "dev_instance_schedule" {
   description = <<-EOT
-    Dev EC2 호스트(aws_instance.host["dev"]) 운영 시간 스케줄 (scheduler.tf).
-    기본: 매일 09:00 시작 / 24:00(=00:00) 중지, Asia/Seoul. cron은 EventBridge Scheduler 형식(6필드).
-    주말을 빼려면 start_cron = "cron(0 9 ? * MON-FRI *)", stop_cron = "cron(0 0 ? * TUE-SAT *)".
+    Dev 운영 시간 스케줄 (scheduler.tf). cron은 EventBridge Scheduler 형식(6필드), timezone 기준.
+      - start_cron / stop_cron         : Dev EC2 호스트(aws_instance.host["dev"], MySQL·Redis) 시작/중지
+      - ecs_start_cron / ecs_stop_cron : Dev ECS 서비스 desiredCount 복구/0
+          → 태스크가 0개가 되면 Capacity Provider managed scaling이 Spot ASG를 0대로 줄인다.
+          → 앱은 의존성(MySQL·Redis)보다 늦게 올리고 먼저 내리도록 호스트와 5분씩 어긋나게 둔다.
+    기본: 호스트 09:00 시작 / 00:00 중지, ECS 09:05 시작 / 23:55 중지 (Asia/Seoul).
+    주말을 빼려면 start_cron = "cron(0 9 ? * MON-FRI *)", stop_cron = "cron(0 0 ? * TUE-SAT *)",
+    ecs_start_cron = "cron(5 9 ? * MON-FRI *)", ecs_stop_cron = "cron(55 23 ? * MON-FRI *)".
   EOT
   type = object({
-    enabled    = optional(bool, true)
-    timezone   = optional(string, "Asia/Seoul")
-    start_cron = optional(string, "cron(0 9 * * ? *)")
-    stop_cron  = optional(string, "cron(0 0 * * ? *)")
+    enabled        = optional(bool, true)
+    timezone       = optional(string, "Asia/Seoul")
+    start_cron     = optional(string, "cron(0 9 * * ? *)")
+    stop_cron      = optional(string, "cron(0 0 * * ? *)")
+    ecs_enabled    = optional(bool, true)
+    ecs_start_cron = optional(string, "cron(5 9 * * ? *)")
+    ecs_stop_cron  = optional(string, "cron(55 23 * * ? *)")
   })
   default = {}
 
   validation {
-    condition     = can(regex("^cron\\(.+\\)$", var.dev_instance_schedule.start_cron)) && can(regex("^cron\\(.+\\)$", var.dev_instance_schedule.stop_cron))
-    error_message = "dev_instance_schedule.start_cron / stop_cron must be EventBridge Scheduler cron(...) expressions."
+    condition = alltrue([
+      for c in [
+        var.dev_instance_schedule.start_cron,
+        var.dev_instance_schedule.stop_cron,
+        var.dev_instance_schedule.ecs_start_cron,
+        var.dev_instance_schedule.ecs_stop_cron,
+      ] : can(regex("^cron\\(.+\\)$", c))
+    ])
+    error_message = "dev_instance_schedule cron fields must be EventBridge Scheduler cron(...) expressions."
   }
 }
 
@@ -584,7 +599,7 @@ variable "monitoring_enabled" {
 variable "monitoring_instance_type" {
   description = "모니터링 호스트(Prometheus · Loki · Grafana) EC2 타입. loadtest-infra와 같은 m7i.large(2 vCPU · 8 GiB)에서 시작한다."
   type        = string
-  default     = "m7i.large"
+  default     = "t3.small"
 }
 
 variable "monitoring_data_volume_size_gib" {
@@ -765,4 +780,13 @@ variable "monitoring_alloy_memory" {
     condition     = var.monitoring_alloy_memory.reservation >= 64 && var.monitoring_alloy_memory.limit >= var.monitoring_alloy_memory.reservation
     error_message = "monitoring_alloy_memory.reservation must be >= 64 and limit must be >= reservation."
   }
+}
+
+variable "monitoring_grafana_alerting_enabled" {
+  description = <<-EOT
+    true면 Grafana 알림(서비스 지표 규칙 → Discord #incident·#alerts)을 프로비저닝한다. 규칙 대상 스테이지는 alert_stages.
+    켜기 전에 SSM DISCORD_WEBHOOK_INCIDENT·DISCORD_WEBHOOK_ALERTS 값을 넣는다 (CHANGE_ME면 전송이 실패한다).
+  EOT
+  type        = bool
+  default     = false
 }

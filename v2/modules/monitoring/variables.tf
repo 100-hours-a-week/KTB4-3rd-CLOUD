@@ -41,7 +41,7 @@ variable "security_group_ids" {
 variable "instance_type" {
   description = "모니터링 호스트 타입. Prometheus·Loki·Grafana를 한 호스트에서 돌린다."
   type        = string
-  default     = "m7i.large"
+  default     = "t3.small"
 }
 
 variable "root_volume_size_gib" {
@@ -104,4 +104,22 @@ variable "scrape_targets" {
     metrics_path = string
   }))
   default = []
+}
+
+variable "alb_arn_suffixes" {
+  description = "인프라 대시보드의 ALB 지표 차원(LoadBalancer = arn suffix)"
+  type = object({
+    prod    = string
+    nonprod = string
+  })
+  default = {
+    prod    = ""
+    nonprod = ""
+  }
+}
+
+variable "grafana_alert_stages" {
+  description = "Grafana 알림 규칙을 적용할 스테이지. 비어 있으면 알림 프로비저닝 파일을 올리지 않는다."
+  type        = list(string)
+  default     = []
 }
