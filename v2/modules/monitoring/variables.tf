@@ -41,7 +41,7 @@ variable "security_group_ids" {
 variable "instance_type" {
   description = "모니터링 호스트 타입. Prometheus·Loki·Grafana를 한 호스트에서 돌린다."
   type        = string
-  default     = "m7i.large"
+  default     = "t3.small"
 }
 
 variable "root_volume_size_gib" {
