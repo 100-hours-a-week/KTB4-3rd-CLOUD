@@ -21,3 +21,9 @@ crash.*.log
 /perf/
 /scripts/
 /issues/
+# 로컬 작업 파일
+/.dev-env.sh
+/v2/.dev-env.sh
+/v2/scripts/
+/.github/workflows/template/
+/Claude outputs/

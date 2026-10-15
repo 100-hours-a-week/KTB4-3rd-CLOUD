@@ -1,0 +1,88 @@
+name: AI V2 Dev CD
+
+# develop 브랜치 → Dev ECS 클러스터(moyeota-v2-dev)의 fastapi 서비스 자동 배포
+#   - AI CI가 develop push에서 만든 dev-<sha> 이미지를 빌드 산출물 그대로(digest) 반영한다.
+#   - 배포 방식은 Dev 서비스 설정(Rolling + Circuit Breaker 자동 롤백)을 따른다.
+#   - AI 레포에는 V1 CD가 없으므로 병행 고려 없이 이 파일만 둔다.
+
+on:
+  workflow_run:
+    workflows:
+      - AI CI
+    types:
+      - completed
+    branches:
+      - develop
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ai-v2-cd-dev
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy fastapi (dev)
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: dev
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER || 'moyeota-v2-dev' }}
+
+    steps:
+      - name: Download release manifest
+        uses: actions/download-artifact@v4
+        with:
+          name: release-manifest
+          path: release-manifest
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Resolve immutable image
+        id: release
+        run: |
+          set -Eeuo pipefail
+
+          manifest="release-manifest/release-manifest.json"
+          image_tag="$(jq -r '.image_tag' "$manifest")"
+          image_digest="$(jq -r '.image_digest' "$manifest")"
+
+          [[ "$image_tag" == dev-* ]]
+          [[ "$image_digest" == sha256:* ]]
+
+          {
+            echo "image_ref=${ECR_REGISTRY}/${ECR_REPOSITORY}@${image_digest}"
+            echo "image_tag=$image_tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.ECS_DEPLOY_ROLE_ARN }}
+          role-session-name: ai-dev-cd-fastapi-${{ github.run_id }}
+
+      - name: Checkout deploy action
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+          persist-credentials: false
+
+      - name: Deploy to ECS
+        uses: ./.github/actions/ecs-deploy
+        with:
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: fastapi
+          image: ${{ steps.release.outputs.image_ref }}
+          release-id: ${{ steps.release.outputs.image_tag }}
+          timeout-seconds: '1200'
