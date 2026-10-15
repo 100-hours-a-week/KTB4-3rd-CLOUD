@@ -66,8 +66,8 @@ ECS 서비스·컨테이너 이름은 `fastapi`, ECR은 `moyeota/ai`.
 
 ### CLOUD(Terraform)
 - `v2/variables.tf` `github_app_repositories`에 `KTB4-3rd-AI` 추가 → apply 후 Deploy Role이 AI 레포 environment를 신뢰한다.
-- `v2/ssm.tf` `ai` 그룹에 `OPENAI_API_KEY` 추가 → apply 후 값 입력:
-  `aws ssm put-parameter --overwrite --type SecureString --name /moyeota/v2/dev/ai/OPENAI_API_KEY --value '<key>'`
+- `v2/ssm.tf` `ai` 그룹에 `OPENAI_API_KEY_1`(이미지용) 추가 → apply 후 값 입력:
+  `aws ssm put-parameter --overwrite --type SecureString --name /moyeota/v2/dev/ai/OPENAI_API_KEY_1 --value '<key>'`
 - 최초 1회: `v2/terraform.tfvars`의 `ecs_container_images.dev.fastapi`에 첫 이미지(digest)를 넣고 apply해 Dev `fastapi` 서비스를 만든다.
   이후 Task Definition은 CD가 갱신한다. (첫 digest는 AI CI가 develop에서 처음 push한 `dev-*` 태그로 확인)
 - CI Role(V1 `infra/iam.tf`)은 이미 `KTB4-3rd-AI`의 main·develop·release/* 를 신뢰하므로 변경 없음.
