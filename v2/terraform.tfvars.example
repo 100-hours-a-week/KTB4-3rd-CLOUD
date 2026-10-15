@@ -139,3 +139,12 @@ monitoring_grafana_host               = null # 예) "monitor.moyeota.com"
 monitoring_grafana_listener_priority  = 50
 monitoring_grafana_dns_record         = false
 monitoring_grafana_certificate_create = false
+
+# 로그 수집 (alloy.tf) — 스테이지 클러스터마다 Alloy DAEMON 1개 (host 네트워크, docker.sock 읽기 전용 마운트)
+#   처음에는 ["stg"]로 docker logs(dual logging) 동작·호스트 메모리 여유를 확인한 뒤 넓힌다
+monitoring_alloy_stages = ["dev", "stg", "prod"]
+monitoring_alloy_image  = "grafana/alloy:v1.20.1"
+monitoring_alloy_memory = {
+  reservation = 128
+  limit       = 256
+}

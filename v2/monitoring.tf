@@ -33,9 +33,11 @@ locals {
     }) if contains(keys(local.monitoring_metrics_endpoints), s.service)
   } : {}
 
-  # 로그를 보낼 ECS 스테이지 (Alloy DAEMON이 뜨는 클러스터).
+  # 로그를 보낼 ECS 스테이지 (Alloy DAEMON이 뜨는 클러스터). monitoring_alloy_stages로 단계적으로 넓힌다.
   # ecs_stages는 스테이지마다 속성 형태가 다른 object라 조건식으로 {}와 묶을 수 없어 이름 집합으로 둔다.
-  monitoring_log_stages = toset(local.monitoring_enabled ? keys(local.ecs_stages) : [])
+  monitoring_log_stages = toset(local.monitoring_enabled ? [
+    for stage in keys(local.ecs_stages) : stage if contains(var.monitoring_alloy_stages, stage)
+  ] : [])
 }
 
 # -----------------------------------------------------------------------------
