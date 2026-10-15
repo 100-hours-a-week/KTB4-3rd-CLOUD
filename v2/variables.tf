@@ -61,7 +61,10 @@ variable "availability_zones" {
 }
 
 variable "subnet_cidrs" {
-  description = "Six unused /24 CIDRs inside the shared VPC, verified against all existing AWS subnets."
+  description = <<-EOT
+    Unused /24 CIDRs inside the shared VPC, verified against all existing AWS subnets.
+    ops : (선택) 모니터링 호스트 전용 private 서브넷 ops-a. null이면 만들지 않고 모니터링 호스트를 app 서브넷에 둔다.
+  EOT
   type = object({
     public_a = string
     public_b = string
@@ -69,19 +72,29 @@ variable "subnet_cidrs" {
     dev      = string
     data_a   = string
     data_b   = string
+    ops      = optional(string)
   })
 
   validation {
     condition = alltrue([
-      for cidr in values(var.subnet_cidrs) : can(cidrnetmask(cidr)) && can(regex("/24$", cidr))
+      for cidr in compact(values(var.subnet_cidrs)) : can(cidrnetmask(cidr)) && can(regex("/24$", cidr))
     ])
     error_message = "Every subnet_cidrs value must be a valid IPv4 /24 CIDR."
   }
 
   validation {
-    condition     = length(distinct(values(var.subnet_cidrs))) == 6
+    condition     = length(distinct(compact(values(var.subnet_cidrs)))) == length(compact(values(var.subnet_cidrs)))
     error_message = "Each V2 subnet must have a distinct CIDR."
   }
+}
+
+variable "s3_gateway_endpoint_enabled" {
+  description = <<-EOT
+    true면 private 워크로드 라우트 테이블(app·dev·ops)에 S3 Gateway Endpoint를 연결한다.
+    ECR 이미지 레이어·모니터링 로그 블록처럼 S3로 가는 트래픽이 NAT를 거치지 않는다 (Gateway Endpoint는 시간당 요금 없음).
+  EOT
+  type        = bool
+  default     = false
 }
 
 variable "prod_app_instance_type" {
@@ -552,4 +565,18 @@ variable "dev_instance_schedule" {
     condition     = can(regex("^cron\\(.+\\)$", var.dev_instance_schedule.start_cron)) && can(regex("^cron\\(.+\\)$", var.dev_instance_schedule.stop_cron))
     error_message = "dev_instance_schedule.start_cron / stop_cron must be EventBridge Scheduler cron(...) expressions."
   }
+}
+
+# -----------------------------------------------------------------------------
+# 중앙 모니터링 (monitoring.tf) — PLG(Prometheus · Loki · Grafana) + Alloy
+#   wiki「V2 중앙 집중식 모니터링 시스템 설계」
+# -----------------------------------------------------------------------------
+
+variable "monitoring_enabled" {
+  description = <<-EOT
+    true면 중앙 모니터링 리소스(모니터링 SG·수집 포트 규칙, 이후 호스트·저장소·수집기)를 만든다.
+    false(기본값)면 이 파일 묶음은 아무것도 만들지 않으므로, 모니터링 PR이 머지돼도 tfvars에서 켜기 전까지 인프라가 바뀌지 않는다.
+  EOT
+  type        = bool
+  default     = false
 }
