@@ -300,6 +300,12 @@ variable "github_org" {
   default     = "100-hours-a-week"
 }
 
+variable "github_org_id" {
+  description = "GitHub org 불변 ID. OIDC 불변 sub 형식(repo:<org>@<org_id>/<repo>@<repo_id>:...)에 쓰인다."
+  type        = string
+  default     = "167328634"
+}
+
 variable "github_cloud_repository" {
   description = "ECS 배포 워크플로가 실행되는 레포. job의 environment(dev/stg/prod)로 스테이지별 Deploy Role이 구분된다."
   type        = string
@@ -501,9 +507,22 @@ variable "github_app_repositories" {
     OIDC sub는 대소문자를 구분하므로 GitHub에 표시되는 레포 이름 그대로 적는다.
   EOT
   type        = list(string)
-  default     = ["KTB4-3rd-BE", "KTB4-3rd-FE"]
+  default     = ["KTB4-3rd-BE", "KTB4-3rd-FE", "KTB4-3rd-AI"]
 }
 
+variable "github_repository_ids" {
+  description = <<-EOT
+    스테이지 Deploy Role을 Assume할 레포 → 불변 repo ID (github_org 하위).
+    2026-07-15 이후 생성 레포는 OIDC sub에 owner ID·repo ID가 들어간다 (issues/ecs-multi-cluster-by-stage.md).
+    ID 확인: gh api repos/<org>/<repo> --jq .id
+  EOT
+  type        = map(string)
+  default = {
+    "KTB4-3rd-BE" = "1344695611"
+    "KTB4-3rd-FE" = "1344690549"
+    "KTB4-3rd-AI" = "1344696058"
+  }
+}
 variable "github_deploy_environments" {
   description = <<-EOT
     스테이지 → CD job의 GitHub Environment 이름. Deploy Role 신뢰 정책의 OIDC sub(environment:<이름>)에 쓰인다.

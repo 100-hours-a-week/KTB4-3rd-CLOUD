@@ -1,0 +1,210 @@
+name: AI CI
+
+# KTB4-3rd-AI(FastAPI) CI — FE CI와 같은 브랜치·태그 규칙
+#   - PR            : 테스트 + Docker 빌드 검증만 (ECR push 없음)
+#   - develop push  : dev-<sha> 이미지 push → AI V2 Dev CD
+#   - release/vX.Y.Z: rc-vX.Y.Z-<sha> 이미지 push → AI Stg CD
+#   - main push     : 빌드 검증만. Prod CD가 Stg에서 검증된 digest를 승격한다 (재빌드 금지)
+#   런타임 값(OPENAI_API_KEY 등)은 이미지에 넣지 않는다. ECS 태스크가 SSM(/moyeota/v2/<stage>/ai/*)에서 주입받는다.
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - main
+      - 'release/**'
+  push:
+    branches:
+      - develop
+      - main
+      - 'release/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  IMAGE_NAME: moyeota-ai
+  PYTHON_VERSION: '3.12'
+
+jobs:
+  test:
+    name: Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # 기본 의존성만 설치한다 (V2는 IMAGE_DEVICE=off, luna만 사용 — local/modal extras 제외)
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pytest
+
+      # 앱이 import되고 라우터가 올라오는지 확인 (OPENAI_API_KEY 없이도 기동돼야 한다)
+      - name: Import smoke test
+        env:
+          IMAGE_DEVICE: 'off'
+        run: python -c "from app.main import app; print([r.path for r in app.routes])"
+
+      # 외부 API를 부르는 평가 테스트(CONGESTION_LIVE_EVAL=1)는 CI에서 돌리지 않는다.
+      - name: Unit tests
+        if: hashFiles('tests/**/*.py') != ''
+        env:
+          IMAGE_DEVICE: 'off'
+        run: pytest -q
+
+  build:
+    name: Build and publish
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve image tag
+        id: meta
+        run: |
+          set -Eeuo pipefail
+
+          push_image=false
+          if [[ "$GITHUB_REF_NAME" == develop ]]; then
+            image_tag="dev-${GITHUB_SHA:0:7}"
+            release_version=""
+            [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]] && push_image=true
+          elif [[ "$GITHUB_REF_NAME" == release/* ]]; then
+            version="${GITHUB_REF_NAME#release/}"
+            [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            image_tag="rc-${version}-${GITHUB_SHA:0:7}"
+            release_version="${version#v}"
+            [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]] && push_image=true
+          elif [[ "$GITHUB_REF_NAME" == main ]]; then
+            image_tag="main-${GITHUB_SHA:0:7}"
+            release_version=""
+          else
+            image_tag="pr-${GITHUB_SHA:0:7}"
+            release_version=""
+          fi
+
+          {
+            echo "image_tag=$image_tag"
+            echo "release_version=$release_version"
+            echo "push_image=$push_image"
+            echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          set -Eeuo pipefail
+
+          if [[ ! -f Dockerfile ]]; then
+            echo "::error title=Dockerfile 없음::레포 루트에 Dockerfile이 필요하다 (Dockerfile.example을 검토 후 Dockerfile로 확정)"
+            exit 1
+          fi
+
+          DOCKER_BUILDKIT=1 docker build \
+            --file Dockerfile \
+            --tag "${IMAGE_NAME}:${IMAGE_TAG}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.created=${{ steps.meta.outputs.build_date }}" \
+            .
+
+      # 이미지가 실제로 뜨고 /health가 200인지 확인한다 (ALB·ECS 헬스체크와 같은 경로)
+      - name: Container health check
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          set -Eeuo pipefail
+
+          docker run -d --name ai-smoke -p 8000:8000 -e IMAGE_DEVICE=off "${IMAGE_NAME}:${IMAGE_TAG}"
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/health; then
+              docker rm -f ai-smoke >/dev/null
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs ai-smoke || true
+          echo "::error title=헬스체크 실패::컨테이너가 /health에 200으로 응답하지 않는다"
+          exit 1
+
+      # CI Role(V1 infra/iam.tf)은 AI 레포의 main·develop·release/* 브랜치 ref만 신뢰한다 → PR은 인증 불가
+      - name: Configure AWS credentials
+        if: steps.meta.outputs.push_image == 'true'
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: ai-ci-${{ github.run_id }}
+
+      - name: Login to ECR
+        if: steps.meta.outputs.push_image == 'true'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push image
+        if: steps.meta.outputs.push_image == 'true'
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          set -Eeuo pipefail
+          remote_image="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+          docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "$remote_image"
+          docker push "$remote_image"
+
+      - name: Resolve image digest and create release manifest
+        if: steps.meta.outputs.push_image == 'true'
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+          RELEASE_VERSION: ${{ steps.meta.outputs.release_version }}
+        run: |
+          set -Eeuo pipefail
+
+          image_digest="$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+          [[ "$image_digest" == sha256:* ]]
+
+          mkdir -p release-manifest
+          jq -n \
+            --arg source_branch "$GITHUB_REF_NAME" \
+            --arg source_sha "$GITHUB_SHA" \
+            --arg image_tag "$IMAGE_TAG" \
+            --arg image_digest "$image_digest" \
+            --arg release_version "$RELEASE_VERSION" \
+            --arg ecr_repository "$ECR_REPOSITORY" \
+            '{source_branch: $source_branch, source_sha: $source_sha, image_tag: $image_tag,
+              image_digest: $image_digest, release_version: $release_version, ecr_repository: $ecr_repository}' \
+            > release-manifest/release-manifest.json
+          cat release-manifest/release-manifest.json
+
+      - name: Upload release manifest
+        if: steps.meta.outputs.push_image == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: release-manifest/release-manifest.json
+          retention-days: 14
