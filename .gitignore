@@ -27,3 +27,4 @@ crash.*.log
 /v2/scripts/
 /.github/workflows/template/
 /Claude outputs/
+/v2/snapshot/
