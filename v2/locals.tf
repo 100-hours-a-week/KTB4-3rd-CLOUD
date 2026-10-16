@@ -192,7 +192,7 @@ locals {
       container_memory     = 704
       container_port       = var.fastapi_port
       additional_ports     = []
-      environment          = {}
+      environment          = { LOCAL_DEVICE = "FALSE" } # 로컬 테스트용 스위치 — 배포 환경은 항상 FALSE
       path_patterns        = ["/ocr/*"]
       route_order          = 2
       health_check_path    = var.fastapi_health_path

@@ -307,7 +307,7 @@ variable "github_org_id" {
 }
 
 variable "github_cloud_repository" {
-  description = "ECS 배포 워크플로가 실행되는 레포. job의 environment(dev/stg/prod)로 스테이지별 Deploy Role이 구분된다."
+  description = "인프라 레포 이름. (미사용) Deploy Role OIDC sub는 github_app_repositories + github_repository_ids로 만든다."
   type        = string
   default     = "KTB4-3rd-CLOUD"
 }
@@ -428,7 +428,7 @@ variable "chat_fanout_schema_version" {
 }
 
 variable "alarm_sns_topic_arn" {
-  description = "브로커 CloudWatch 알람을 보낼 SNS 토픽. null이면 알람 상태만 남는다."
+  description = "브로커 CloudWatch 알람을 보낼 기존 SNS 토픽. null이면 alerting_enabled로 만든 <project>-alerts 토픽을 쓰고, 그것도 없으면 알람 상태만 남는다."
   type        = string
   default     = null
   nullable    = true
@@ -568,21 +568,36 @@ variable "fis_stages" {
 
 variable "dev_instance_schedule" {
   description = <<-EOT
-    Dev EC2 호스트(aws_instance.host["dev"]) 운영 시간 스케줄 (scheduler.tf).
-    기본: 매일 09:00 시작 / 24:00(=00:00) 중지, Asia/Seoul. cron은 EventBridge Scheduler 형식(6필드).
-    주말을 빼려면 start_cron = "cron(0 9 ? * MON-FRI *)", stop_cron = "cron(0 0 ? * TUE-SAT *)".
+    Dev 운영 시간 스케줄 (scheduler.tf). cron은 EventBridge Scheduler 형식(6필드), timezone 기준.
+      - start_cron / stop_cron         : Dev EC2 호스트(aws_instance.host["dev"], MySQL·Redis) 시작/중지
+      - ecs_start_cron / ecs_stop_cron : Dev ECS 서비스 desiredCount 복구/0
+          → 태스크가 0개가 되면 Capacity Provider managed scaling이 Spot ASG를 0대로 줄인다.
+          → 앱은 의존성(MySQL·Redis)보다 늦게 올리고 먼저 내리도록 호스트와 5분씩 어긋나게 둔다.
+    기본: 호스트 09:00 시작 / 00:00 중지, ECS 09:05 시작 / 23:55 중지 (Asia/Seoul).
+    주말을 빼려면 start_cron = "cron(0 9 ? * MON-FRI *)", stop_cron = "cron(0 0 ? * TUE-SAT *)",
+    ecs_start_cron = "cron(5 9 ? * MON-FRI *)", ecs_stop_cron = "cron(55 23 ? * MON-FRI *)".
   EOT
   type = object({
-    enabled    = optional(bool, true)
-    timezone   = optional(string, "Asia/Seoul")
-    start_cron = optional(string, "cron(0 9 * * ? *)")
-    stop_cron  = optional(string, "cron(0 0 * * ? *)")
+    enabled        = optional(bool, true)
+    timezone       = optional(string, "Asia/Seoul")
+    start_cron     = optional(string, "cron(0 9 * * ? *)")
+    stop_cron      = optional(string, "cron(0 0 * * ? *)")
+    ecs_enabled    = optional(bool, true)
+    ecs_start_cron = optional(string, "cron(5 9 * * ? *)")
+    ecs_stop_cron  = optional(string, "cron(55 23 * * ? *)")
   })
   default = {}
 
   validation {
-    condition     = can(regex("^cron\\(.+\\)$", var.dev_instance_schedule.start_cron)) && can(regex("^cron\\(.+\\)$", var.dev_instance_schedule.stop_cron))
-    error_message = "dev_instance_schedule.start_cron / stop_cron must be EventBridge Scheduler cron(...) expressions."
+    condition = alltrue([
+      for c in [
+        var.dev_instance_schedule.start_cron,
+        var.dev_instance_schedule.stop_cron,
+        var.dev_instance_schedule.ecs_start_cron,
+        var.dev_instance_schedule.ecs_stop_cron,
+      ] : can(regex("^cron\\(.+\\)$", c))
+    ])
+    error_message = "dev_instance_schedule cron fields must be EventBridge Scheduler cron(...) expressions."
   }
 }
 
@@ -595,6 +610,201 @@ variable "monitoring_enabled" {
   description = <<-EOT
     true면 중앙 모니터링 리소스(모니터링 SG·수집 포트 규칙, 이후 호스트·저장소·수집기)를 만든다.
     false(기본값)면 이 파일 묶음은 아무것도 만들지 않으므로, 모니터링 PR이 머지돼도 tfvars에서 켜기 전까지 인프라가 바뀌지 않는다.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "monitoring_instance_type" {
+  description = "모니터링 호스트(Prometheus · Loki · Grafana) EC2 타입. loadtest-infra와 같은 m7i.large(2 vCPU · 8 GiB)에서 시작한다."
+  type        = string
+  default     = "t3.small"
+}
+
+variable "monitoring_data_volume_size_gib" {
+  description = "모니터링 호스트 데이터 EBS (Prometheus TSDB · Loki WAL · Grafana DB)"
+  type        = number
+  default     = 40
+
+  validation {
+    condition     = var.monitoring_data_volume_size_gib >= 20
+    error_message = "monitoring_data_volume_size_gib must be at least 20 GiB."
+  }
+}
+
+variable "monitoring_prometheus_retention_days" {
+  description = "Prometheus 보존 기간(일). 장기 보존이 필요해지면 AMP·Mimir remote write를 검토한다."
+  type        = number
+  default     = 15
+}
+
+variable "monitoring_loki_retention_days" {
+  description = "Loki 로그 보존 기간(일). nonprod는 stage 라벨이 dev·stg인 로그에 적용된다."
+  type = object({
+    prod    = number
+    nonprod = number
+  })
+  default = {
+    prod    = 30
+    nonprod = 7
+  }
+}
+
+# -----------------------------------------------------------------------------
+# 장애 알림 (alerting.tf) — 모니터링 스택과 독립된 CloudWatch Alarm 경로
+# -----------------------------------------------------------------------------
+
+variable "alerting_enabled" {
+  description = <<-EOT
+    true면 공용 SNS 토픽(<project>-alerts)과 인프라 알람(ALB·대상 그룹·ECS 태스크 수·모니터링 호스트 하트비트)을 만든다.
+    alarm_sns_topic_arn을 따로 지정하지 않으면 Redis 브로커 알람도 이 토픽으로 보낸다.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "alert_emails" {
+  description = "SNS 이메일 구독 주소. 생성 후 각 메일함에서 구독 확인(Confirm subscription)을 눌러야 알림이 간다."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for e in var.alert_emails : can(regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", e))])
+    error_message = "alert_emails must contain valid email addresses."
+  }
+}
+
+variable "alert_stages" {
+  description = "ALB 대상 그룹·ECS 태스크 수 알람을 만들 스테이지. dev는 09–24시에만 떠 있어 기본값에서 뺀다."
+  type        = list(string)
+  default     = ["prod"]
+
+  validation {
+    condition     = alltrue([for s in var.alert_stages : contains(["dev", "stg", "prod"], s)])
+    error_message = "alert_stages may only contain dev, stg, prod."
+  }
+}
+
+variable "alert_alb_5xx_threshold" {
+  description = "Prod ALB 자체 5xx(HTTPCode_ELB_5XX_Count) 5분 합계 임계값"
+  type        = number
+  default     = 10
+}
+
+variable "alert_discord_enabled" {
+  description = <<-EOT
+    true면 "<project>-" 로 시작하는 CloudWatch 알람의 상태 변경(ALARM·OK)을 EventBridge API destination으로 Discord #incident에 보낸다.
+    웹훅 URL은 /<config_path_prefix>/monitoring/DISCORD_WEBHOOK_INCIDENT 값을 읽는다 → 값을 넣은 뒤에 켠다 (CHANGE_ME면 생성 실패).
+    URL이 state에 남으므로(sensitive) state 버킷 접근 권한을 확인한다.
+  EOT
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.alert_discord_enabled || (var.alerting_enabled && var.monitoring_enabled)
+    error_message = "alert_discord_enabled = true 이면 alerting_enabled와 monitoring_enabled(웹훅 SSM 파라미터)가 모두 true여야 한다."
+  }
+}
+
+variable "monitoring_discovery_namespace" {
+  description = <<-EOT
+    메트릭 수집용 Cloud Map 프라이빗 DNS 네임스페이스. ECS 서비스 태스크가 <stage>-<service>-metrics.<이 이름> A 레코드로 등록된다.
+    Service Connect 네임스페이스(<stage>.moyeota-v2.local, HTTP)와 별개다. 공유 VPC의 DNS 지원·호스트 이름 속성이 켜져 있어야 한다.
+  EOT
+  type        = string
+  default     = "monitor.moyeota.internal"
+}
+
+variable "monitoring_grafana_host" {
+  description = <<-EOT
+    Grafana를 Non-Prod ALB 호스트 규칙으로 열 도메인 (예: monitor.moyeota.com). null이면 ALB에 붙이지 않고 SSM 포트 포워딩으로만 접속한다.
+    Non-Prod ALB SG가 admin_cidrs·dev_qa_cidrs만 허용하므로 팀 CIDR에서만 열린다. 로그인은 Grafana 계정으로 한다.
+  EOT
+  type        = string
+  default     = null
+  nullable    = true
+}
+
+variable "monitoring_grafana_listener_priority" {
+  description = "Non-Prod ALB 리스너 규칙 우선순위. ECS 규칙(stg 200~, dev 300~)보다 앞에 둔다."
+  type        = number
+  default     = 50
+
+  validation {
+    condition     = var.monitoring_grafana_listener_priority >= 1 && var.monitoring_grafana_listener_priority < 200
+    error_message = "monitoring_grafana_listener_priority must be between 1 and 199 (ECS rules use 200+)."
+  }
+}
+
+variable "monitoring_grafana_dns_record" {
+  description = "true면 route53_zone_name에 monitoring_grafana_host → Non-Prod ALB ALIAS 레코드를 만든다."
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.monitoring_grafana_dns_record || (var.monitoring_grafana_host != null && var.route53_zone_name != null)
+    error_message = "monitoring_grafana_dns_record = true 이면 monitoring_grafana_host와 route53_zone_name이 필요하다."
+  }
+}
+
+variable "monitoring_grafana_certificate_create" {
+  description = <<-EOT
+    true면 monitoring_grafana_host 전용 ACM 인증서를 DNS 검증으로 만들어 Non-Prod HTTPS 리스너에 추가 인증서(SNI)로 붙인다.
+    기존 Non-Prod 인증서(dev·stg SAN)에 도메인을 더하면 인증서가 교체되므로 따로 만든다.
+  EOT
+  type        = bool
+  default     = false
+
+  validation {
+    condition = !var.monitoring_grafana_certificate_create || (
+      var.monitoring_grafana_host != null && var.route53_zone_name != null &&
+      (var.nonprod_alb_certificate_arn != null || var.nonprod_acm_certificate_create)
+    )
+    error_message = "monitoring_grafana_certificate_create = true 이면 monitoring_grafana_host, route53_zone_name, Non-Prod HTTPS 리스너(nonprod_alb_certificate_arn 또는 nonprod_acm_certificate_create)가 필요하다."
+  }
+}
+
+variable "monitoring_alloy_stages" {
+  description = <<-EOT
+    Alloy DAEMON을 띄워 Loki로 로그를 보낼 ECS 스테이지. ecs_stages에 없는 값은 무시한다.
+    처음에는 ["stg"]로 dual logging(docker logs) 동작과 호스트 메모리 여유를 확인한 뒤 dev·prod로 넓힌다.
+  EOT
+  type        = list(string)
+  default     = ["dev", "stg", "prod"]
+
+  validation {
+    condition     = alltrue([for s in var.monitoring_alloy_stages : contains(["dev", "stg", "prod"], s)])
+    error_message = "monitoring_alloy_stages values must be dev, stg or prod."
+  }
+}
+
+variable "monitoring_alloy_image" {
+  description = "Grafana Alloy 이미지 (버전 고정). docker.sock을 마운트하므로 latest를 쓰지 않는다."
+  type        = string
+  default     = "grafana/alloy:v1.20.1"
+}
+
+variable "monitoring_alloy_memory" {
+  description = "Alloy 컨테이너 메모리(MiB). reservation은 배치 시 예약, limit을 넘으면 컨테이너가 OOM으로 재시작된다."
+  type = object({
+    reservation = number
+    limit       = number
+  })
+  default = {
+    reservation = 128
+    limit       = 256
+  }
+
+  validation {
+    condition     = var.monitoring_alloy_memory.reservation >= 64 && var.monitoring_alloy_memory.limit >= var.monitoring_alloy_memory.reservation
+    error_message = "monitoring_alloy_memory.reservation must be >= 64 and limit must be >= reservation."
+  }
+}
+
+variable "monitoring_grafana_alerting_enabled" {
+  description = <<-EOT
+    true면 Grafana 알림(서비스 지표 규칙 → Discord #incident·#alerts)을 프로비저닝한다. 규칙 대상 스테이지는 alert_stages.
+    켜기 전에 SSM DISCORD_WEBHOOK_INCIDENT·DISCORD_WEBHOOK_ALERTS 값을 넣는다 (CHANGE_ME면 전송이 실패한다).
   EOT
   type        = bool
   default     = false

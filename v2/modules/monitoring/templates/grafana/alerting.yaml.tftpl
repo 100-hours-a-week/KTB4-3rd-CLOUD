@@ -1,0 +1,242 @@
+# Grafana 알림 프로비저닝 (Terraform modules/monitoring이 생성, UI에서 수정할 수 없다)
+#   - 연락처 : Discord #incident(즉시 대응) / #alerts(확인 필요). 웹훅 URL은 .env(SSM)에서 $변수로 주입
+#   - 라우팅 : stage=prod 이고 severity=page → #incident, 나머지 → #alerts
+#   - 규칙   : 대상 스테이지 ${stage_regex} 의 서비스 지표 (로그 수집 유실은 CloudWatch 알람 <stage>-alloy-log-dropped)
+#   규칙을 파일에서 지우면 Grafana에 남는다. 지울 때는 deleteRules에 uid를 한 번 넣어 배포한다.
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: discord-incident
+    receivers:
+      - uid: discord-incident
+        type: discord
+        settings:
+          url: $DISCORD_WEBHOOK_INCIDENT
+          use_discord_username: false
+  - orgId: 1
+    name: discord-alerts
+    receivers:
+      - uid: discord-alerts
+        type: discord
+        settings:
+          url: $DISCORD_WEBHOOK_ALERTS
+          use_discord_username: false
+
+policies:
+  - orgId: 1
+    receiver: discord-alerts
+    group_by: ["alertname", "stage", "service"]
+    group_wait: 30s
+    group_interval: 5m
+    repeat_interval: 4h
+    routes:
+      - receiver: discord-incident
+        object_matchers:
+          - ["stage", "=", "prod"]
+          - ["severity", "=", "page"]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 1h
+
+groups:
+  - orgId: 1
+    name: services
+    folder: Moyeota V2 Alerts
+    interval: 1m
+    rules:
+      # 수집 대상(태스크)이 메트릭에 응답하지 않음
+      - uid: moyeota-target-down
+        title: 수집 대상 응답 없음
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                min by (stage, service, instance) (up{stage=~"${stage_regex}"})
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+        noDataState: OK
+        execErrState: Error
+        for: 2m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.stage }} {{ $labels.service }} 태스크 {{ $labels.instance }} 가 메트릭에 응답하지 않음"
+          description: 태스크가 비정상 종료됐거나 관리 포트(8090)·/metrics가 응답하지 않는다. ECS 서비스 이벤트와 컨테이너 로그를 확인한다.
+
+      # Spring(rest·websocket) 5xx 비율 > 5% (분당 6건 미만의 저트래픽은 제외)
+      - uid: moyeota-spring-5xx-ratio
+        title: Spring 5xx 비율 높음
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                (
+                  sum by (stage, service) (rate(http_server_requests_seconds_count{stage=~"${stage_regex}", uri!~"/actuator.*", status=~"5.."}[5m]))
+                  / sum by (stage, service) (rate(http_server_requests_seconds_count{stage=~"${stage_regex}", uri!~"/actuator.*"}[5m]))
+                )
+                and sum by (stage, service) (rate(http_server_requests_seconds_count{stage=~"${stage_regex}", uri!~"/actuator.*"}[5m])) > 0.1
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.05] }
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.stage }} {{ $labels.service }} 5xx 비율 {{ humanizePercentage $values.A.Value }}"
+          description: 최근 5분 5xx 비율이 5%를 넘었다. 'V2 서비스 상세' 대시보드의 URI별 요청량과 에러 로그를 확인한다.
+
+      # FastAPI 5xx 비율 > 5% (prometheus-fastapi-instrumentator 기본 지표)
+      - uid: moyeota-fastapi-5xx-ratio
+        title: FastAPI 5xx 비율 높음
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                (
+                  sum by (stage, service) (rate(http_requests_total{stage=~"${stage_regex}", status="5xx"}[5m]))
+                  / sum by (stage, service) (rate(http_requests_total{stage=~"${stage_regex}"}[5m]))
+                )
+                and sum by (stage, service) (rate(http_requests_total{stage=~"${stage_regex}"}[5m])) > 0.1
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.05] }
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          summary: "{{ $labels.stage }} {{ $labels.service }} 5xx 비율 {{ humanizePercentage $values.A.Value }}"
+          description: 최근 5분 FastAPI 5xx 비율이 5%를 넘었다. 외부 API 응답과 fastapi 로그를 확인한다.
+
+      # Spring p99 > 2.5s (10분 지속). 사용자 영향 판단은 SLO burn-rate 알림이 맡고, 이 규칙은 조기 경보
+      - uid: moyeota-spring-p99-latency
+        title: Spring p99 응답 시간 높음
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                histogram_quantile(0.99, sum by (stage, service, le) (rate(http_server_requests_seconds_bucket{stage=~"${stage_regex}", uri!~"/actuator.*"}[5m])))
+                and sum by (stage, service) (rate(http_server_requests_seconds_count{stage=~"${stage_regex}", uri!~"/actuator.*"}[5m])) > 0.1
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [2.5] }
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.stage }} {{ $labels.service }} p99 {{ humanizeDuration $values.A.Value }}"
+          description: p99 응답 시간이 10분 동안 2.5초를 넘었다. URI별 p99와 DB 커넥션 대기를 확인한다.
+
+      # DB 커넥션 풀 대기 (HikariCP)
+      - uid: moyeota-hikari-pending
+        title: DB 커넥션 대기 발생
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                max by (stage, service, instance) (hikaricp_connections_pending{stage=~"${stage_regex}"})
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0] }
+        noDataState: OK
+        execErrState: Error
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.stage }} {{ $labels.service }} {{ $labels.instance }} DB 커넥션 대기 {{ $values.A.Value }}건"
+          description: 커넥션 풀이 5분 동안 부족했다. 느린 쿼리, 커넥션 누수, 풀 크기와 DB max_connections를 확인한다.
+
+      # JVM 힙 사용률 > 90% (10분 지속)
+      - uid: moyeota-jvm-heap-high
+        title: JVM 힙 사용률 높음
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: >-
+                sum by (stage, service, instance) (jvm_memory_used_bytes{stage=~"${stage_regex}", area="heap"})
+                / sum by (stage, service, instance) (jvm_memory_max_bytes{stage=~"${stage_regex}", area="heap"} > 0)
+              instant: true
+              range: false
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [0.9] }
+        noDataState: OK
+        execErrState: Error
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.stage }} {{ $labels.service }} {{ $labels.instance }} 힙 {{ humanizePercentage $values.A.Value }}"
+          description: 힙 사용률이 10분 동안 90%를 넘었다. GC 일시 정지 시간과 OOM 재시작 여부를 확인한다.

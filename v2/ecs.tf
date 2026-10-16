@@ -90,12 +90,15 @@ module "ecs_cluster" {
   enable_execute_command  = true
   exec_log_retention_days = each.value.exec_log_retention_days
 
-  # CD는 BE·FE 레포에서 workflow_run(BE CI / FE CI)으로 돈다 → 앱 레포의 해당 스테이지 environment만 허용
+  # CD는 BE·FE·AI 레포에서 workflow_run(CI 완료)으로 돈다 → 앱 레포의 해당 스테이지 environment만 허용
   #   스테이지 키(stg/prod)와 GitHub Environment 이름(staging/production)이 달라 github_deploy_environments로 매핑한다
+  #   2026-07-15 이후 생성 레포는 OIDC sub가 불변 형식이다: repo:<org>@<org_id>/<repo>@<repo_id>:environment:<env>
+  #   (예: repo:100-hours-a-week@167328634/KTB4-3rd-BE@1344695611:environment:dev)
+  #   github_app_repositories의 레포는 모두 github_repository_ids에 ID가 있어야 한다 (없으면 plan 단계에서 실패).
   github_oidc_provider_arn = data.aws_iam_openid_connect_provider.github.arn
   github_oidc_subjects = [
-    for repo in distinct(concat([var.github_cloud_repository], var.github_app_repositories)) :
-    "repo:${var.github_org}/${repo}:environment:${lookup(var.github_deploy_environments, each.key, each.key)}"
+    for repo in distinct(var.github_app_repositories) :
+    "repo:${var.github_org}@${var.github_org_id}/${repo}@${var.github_repository_ids[repo]}:environment:${lookup(var.github_deploy_environments, each.key, each.key)}"
   ]
 }
 
@@ -216,6 +219,9 @@ module "ecs_service" {
   }
 
   autoscaling = each.value.autoscaling
+
+  # 중앙 모니터링 메트릭 수집 대상이면 Cloud Map에 태스크 A 레코드를 등록한다 (monitoring.tf)
+  service_registry_arn = try(aws_service_discovery_service.metrics[each.key].arn, null)
 
   service_connect = (
     contains(var.ecs_service_connect_stages, each.value.stage) &&

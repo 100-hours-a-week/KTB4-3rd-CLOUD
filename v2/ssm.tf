@@ -67,9 +67,11 @@ locals {
       "SENTRY_TRACES_SAMPLE_RATE",
     ]
     ai = [
-      # luna(OpenAI) 이미지(택시미터·영수증)용. _2(혼잡도)는 혼잡도 배포 때 추가한다.
-      # LOCAL_DEVICE·MODAL_TOKEN_*_1은 넣지 않는다 → 미설정 시 off(v2, luna만 사용)
+      # 기능별로 키를 나눈다: _1 = 이미지(영수증·택시미터), _2 = 혼잡도
+      # LOCAL_DEVICE(로컬 테스트용, 배포 환경은 FALSE 고정)는 비밀값이 아니라 locals.tf ecs_service_specs.fastapi.environment에서 넣는다
+      # OpenAI API 키
       "OPENAI_API_KEY_1",
+      "OPENAI_API_KEY_2",
     ]
   }
 

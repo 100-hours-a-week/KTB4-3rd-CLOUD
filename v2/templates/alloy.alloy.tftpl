@@ -1,0 +1,63 @@
+// =============================================================================
+// Grafana Alloy — ECS 컨테이너 로그 → Loki  (stage: ${stage})
+//   Terraform(alloy.tf)이 렌더링해 태스크 정의 환경 변수 ALLOY_CONFIG로 넣는다. 직접 고치지 않는다.
+//
+//   ECS 태스크는 awslogs 드라이버를 쓰지만 Docker Engine의 dual logging 캐시 덕분에
+//   Docker API(docker logs)로 같은 로그를 읽을 수 있다. CloudWatch 원본은 안전망으로 남는다.
+//   Loki 라벨은 stage · service · container 세 개만 쓴다 (추적 ID 등은 로그 본문에서 검색).
+// =============================================================================
+
+// ECS가 띄운 태스크 컨테이너만 (ecs-agent 등 호스트 컨테이너에는 com.amazonaws.ecs.cluster 라벨이 없다)
+discovery.docker "ecs" {
+  host             = "unix:///var/run/docker.sock"
+  refresh_interval = "15s"
+
+  filter {
+    name   = "label"
+    values = ["com.amazonaws.ecs.cluster"]
+  }
+}
+
+discovery.relabel "ecs" {
+  targets = discovery.docker.ecs.targets
+
+  // awsvpc pause 컨테이너와 Alloy 자신은 수집하지 않는다
+  rule {
+    source_labels = ["__meta_docker_container_label_com_amazonaws_ecs_container_name"]
+    regex         = "~internal~ecs~pause"
+    action        = "drop"
+  }
+
+  rule {
+    source_labels = ["__meta_docker_container_label_com_amazonaws_ecs_task_definition_family"]
+    regex         = "${family_prefix}alloy"
+    action        = "drop"
+  }
+
+  // 태스크 정의 패밀리 "${family_prefix}rest" → service="rest"
+  rule {
+    source_labels = ["__meta_docker_container_label_com_amazonaws_ecs_task_definition_family"]
+    regex         = "${family_prefix}(.+)"
+    target_label  = "service"
+  }
+
+  // 컨테이너 이름 (앱 컨테이너 · Service Connect 프록시 등)
+  rule {
+    source_labels = ["__meta_docker_container_label_com_amazonaws_ecs_container_name"]
+    target_label  = "container"
+  }
+}
+
+loki.source.docker "ecs" {
+  host             = "unix:///var/run/docker.sock"
+  targets          = discovery.relabel.ecs.output
+  labels           = { stage = "${stage}" }
+  refresh_interval = "15s"
+  forward_to       = [loki.write.monitoring.receiver]
+}
+
+loki.write "monitoring" {
+  endpoint {
+    url = "${loki_push_url}"
+  }
+}
