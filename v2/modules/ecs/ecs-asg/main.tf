@@ -177,7 +177,9 @@ resource "aws_autoscaling_group" "this" {
       max_healthy_percentage       = 100
       instance_warmup              = var.health_check_grace_period
       scale_in_protected_instances = "Refresh"
-      skip_matching                = true
+      # skip_matching = true는 속성 기반 인스턴스 선택(instance_requirements)과 함께 쓸 수 없다
+      #   (StartInstanceRefresh ValidationError). instance_types로 고정한 ASG에서만 켠다.
+      skip_matching = var.instance_requirements == null
     }
   }
 

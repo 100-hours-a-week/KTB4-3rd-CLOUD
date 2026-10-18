@@ -19,6 +19,13 @@ resource "aws_instance" "host" {
   })
   user_data_replace_on_change = false
 
+  # AMI는 SSM "current" 경로를 따라가므로 Canonical이 새 AMI를 내면 plan에 교체(DELETE→create)가 잡힌다.
+  # 10/17 -target apply에서 이 교체가 딸려 들어와 dev(MySQL·Redis)·prod 호스트가 삭제됐다 → 생성 후 AMI 변경은 무시한다.
+  # AMI를 올리려면: terraform apply -replace='aws_instance.host["<key>"]' 로 의도적으로 교체한다.
+  lifecycle {
+    ignore_changes = [ami]
+  }
+
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"

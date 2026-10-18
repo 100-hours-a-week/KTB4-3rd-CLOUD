@@ -1,0 +1,45 @@
+# V2 dev 데이터 계층 (dev EC2 호스트: aws_instance.host["dev"])
+#   - rest·websocket 태스크가 <호스트 private IP>:3306 / :6379 로 접속한다 (SSM DB_HOST, broker/REDIS_HOST)
+#   - Docker data-root가 데이터 EBS(/mnt/docker-data/docker)라서 mysql-data 볼륨은 호스트를 교체해도 EBS와 함께 남는다
+#   - 실행: sudo docker compose --env-file db.env -f compose.db.yaml up -d
+name: moyeota-dev-db
+
+services:
+  mysql:
+    image: mysql:8.4 # V1 prod(deploy/v1-compose.yaml)와 같은 버전
+    container_name: mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+09:00
+      - --innodb-buffer-pool-size=512M
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    mem_limit: 1536m
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    # 채팅 fan-out Pub/Sub 전용 → 영속화 없음
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    ports:
+      - "6379:6379"
+    mem_limit: 384m
+
+volumes:
+  mysql-data:
