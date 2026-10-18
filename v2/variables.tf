@@ -809,3 +809,146 @@ variable "monitoring_grafana_alerting_enabled" {
   type        = bool
   default     = false
 }
+
+# -----------------------------------------------------------------------------
+# 앱 이미지 버킷 (images.tf)
+# -----------------------------------------------------------------------------
+
+variable "ecs_image_buckets" {
+  description = <<-EOT
+    스테이지 → 앱 이미지 버킷 이름. 여기 있는 스테이지의 ecs_image_bucket_services Task Role에 접근 권한을 붙인다.
+    stg는 사용할 버킷(dev 공유 / 별도 버킷)을 정한 뒤 추가한다. stg가 dev 버킷을 쓰면 버킷 CORS에 https://stg.moyeota.com도 넣어야 한다.
+  EOT
+  type        = map(string)
+  default = {
+    dev  = "moyeota-dev-images"
+    prod = "moyeota-prod-images"
+  }
+
+  validation {
+    condition     = alltrue([for s in keys(var.ecs_image_buckets) : contains(["dev", "stg", "prod"], s)])
+    error_message = "ecs_image_buckets keys must be dev, stg, prod."
+  }
+
+  # dev·stg 태스크가 prod 이미지 버킷에 접근하지 못하게 한다
+  validation {
+    condition = alltrue([
+      for s, b in var.ecs_image_buckets : s == "prod" || b != lookup(var.ecs_image_buckets, "prod", "")
+    ])
+    error_message = "Non-prod stages must not use the prod image bucket."
+  }
+}
+
+variable "ecs_image_bucket_services" {
+  description = "이미지 버킷 권한을 붙일 ECS 서비스(Task Role). 이미지 presigned URL 발급·확인·복사는 REST만 한다."
+  type        = list(string)
+  default     = ["rest"]
+
+  validation {
+    condition     = alltrue([for s in var.ecs_image_bucket_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
+    error_message = "ecs_image_bucket_services may only contain rest, websocket, frontend, fastapi."
+  }
+}
+
+variable "ecs_image_object_prefixes" {
+  description = "앱이 읽고 쓰는 이미지 버킷 prefix. tmp(업로드 임시) · profile(공개) · meter·transfer(정산, 비공개)."
+  type        = list(string)
+  default     = ["tmp", "profile", "meter", "transfer"]
+}
+
+# --- 백엔드 파트 dev 접근 (developer_access.tf) --------------------------------
+
+variable "dev_backend_users" {
+  description = "dev 로그·ECS 조회·ECS Exec 권한을 받을 BE IAM 사용자 이름. 비어 있으면 그룹·정책도 만들지 않는다."
+  type        = list(string)
+  default     = []
+}
+
+variable "dev_backend_group_name" {
+  description = "BE IAM 그룹 이름"
+  type        = string
+  default     = "moyeota-backend"
+}
+
+variable "dev_backend_console_access" {
+  description = "BE 사용자에게 콘솔 로그인(초기 비밀번호, 첫 로그인 때 변경 강제)을 줄지"
+  type        = bool
+  default     = true
+}
+
+variable "dev_backend_log_services" {
+  description = "BE가 조회할 dev 로그 그룹의 서비스. exec 로그 그룹은 넣지 않는다."
+  type        = list(string)
+  default     = ["rest", "websocket", "fastapi"]
+
+  validation {
+    condition     = alltrue([for s in var.dev_backend_log_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
+    error_message = "dev_backend_log_services may only contain rest, websocket, frontend, fastapi."
+  }
+}
+
+variable "dev_backend_exec_containers" {
+  description = "BE가 ECS Exec로 들어갈 수 있는 dev 컨테이너 이름"
+  type        = list(string)
+  default     = ["rest", "websocket"]
+}
+
+variable "dev_backend_ssm_groups" {
+  description = "BE가 값을 조회·수정할 dev SSM 파라미터 그룹 (ssm.tf ssm_param_keys의 키)"
+  type        = list(string)
+  default     = ["backend"]
+
+  validation {
+    condition     = alltrue([for g in var.dev_backend_ssm_groups : contains(["backend", "frontend", "ai"], g)])
+    error_message = "dev_backend_ssm_groups may only contain backend, frontend, ai."
+  }
+}
+
+variable "dev_backend_deploy_services" {
+  description = "BE가 \"새 배포 강제\"(ecs:UpdateService)로 재배포할 수 있는 dev 서비스"
+  type        = list(string)
+  default     = ["rest", "websocket"]
+
+  validation {
+    condition     = alltrue([for s in var.dev_backend_deploy_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
+    error_message = "dev_backend_deploy_services may only contain rest, websocket, frontend, fastapi."
+  }
+}
+
+# -----------------------------------------------------------------------------
+# FastAPI 로그 읽기 권한 (fastapi_log_access.tf)
+# -----------------------------------------------------------------------------
+
+variable "fastapi_log_read_stages" {
+  description = "FastAPI Task Role에 자기 스테이지 로그 읽기 권한을 붙일 스테이지. 해당 스테이지 fastapi 서비스가 있을 때만 생성된다."
+  type        = list(string)
+  default     = ["dev", "prod"]
+
+  validation {
+    condition     = alltrue([for s in var.fastapi_log_read_stages : contains(["dev", "stg", "prod"], s)])
+    error_message = "fastapi_log_read_stages may only contain dev, stg, prod."
+  }
+}
+
+variable "fastapi_log_read_expires_at" {
+  description = "FastAPI 로그 읽기 권한 만료 시각 (UTC, RFC3339). 기본값은 2026-11-16 00:00 KST."
+  type        = string
+  default     = "2026-11-15T15:00:00Z"
+
+  validation {
+    condition     = can(regex("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$", var.fastapi_log_read_expires_at))
+    error_message = "fastapi_log_read_expires_at must be UTC RFC3339 like 2026-11-15T15:00:00Z."
+  }
+}
+
+variable "ai_log_reader_users" {
+  description = "로컬에서 dev FastAPI 로그를 aws login으로 읽을 AI IAM 사용자 이름. 비어 있으면 그룹·정책·사용자를 만들지 않는다."
+  type        = list(string)
+  default     = []
+}
+
+variable "ai_log_reader_group_name" {
+  description = "AI 로컬 로그 조회 IAM 그룹 이름"
+  type        = string
+  default     = "moyeota-ai"
+}
