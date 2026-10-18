@@ -24,14 +24,14 @@
         "type": "custom",
         "query": "prod,stg,dev",
         "current": {
-          "text": "prod",
-          "value": "prod"
+          "text": "dev",
+          "value": "dev"
         },
         "options": [
           {
             "text": "prod",
             "value": "prod",
-            "selected": true
+            "selected": false
           },
           {
             "text": "stg",
@@ -41,7 +41,7 @@
           {
             "text": "dev",
             "value": "dev",
-            "selected": false
+            "selected": true
           }
         ],
         "hide": 0,
@@ -81,7 +81,27 @@
     ]
   },
   "annotations": {
-    "list": []
+    "list": [
+      {
+        "builtIn": 0,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "orange",
+        "name": "부하 테스트 실행 (loadtest 태그)",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [
+            "loadtest"
+          ],
+          "type": "tags"
+        }
+      }
+    ]
   },
   "links": [
     {
@@ -239,6 +259,440 @@
         "x": 0,
         "y": 8
       }
+    },
+    {
+      "id": 4,
+      "type": "row",
+      "title": "[부하 테스트] 이상 징후 — 풀·잠금·relay·AI·스케줄러 로그 (LP-01·02·06·09·13)",
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "panels": [
+        {
+          "type": "timeseries",
+          "title": "태그별 WARN · ERROR 로그 (분당)",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "sum by (service, tag) (count_over_time({stage=\"$stage\", service=~\"$service\"} |~ \"WARN|ERROR\" | json | __error__=\"\" | log_level=~\"WARN|ERROR\" | regexp `\\[(?P<tag>[A-Z][A-Z_]{2,})\\]` [1m]))",
+              "queryType": "range",
+              "legendFormat": "{{service}} {{tag}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "description": "BE 로그의 [TAG] 접두사로 묶는다. 태그 없는 ERROR(스택 트레이스 등)는 아래 패턴 패널에서 본다.",
+          "id": 5,
+          "gridPos": {
+            "h": 8,
+            "w": 24,
+            "x": 0,
+            "y": 25
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "DB · 풀 · 잠금 · 메모리 오류 패턴 (분당)",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "sum(count_over_time({stage=\"$stage\", service=~\"$service\"} |= \"Connection is not available, request timed out\" [1m]))",
+              "queryType": "range",
+              "legendFormat": "Hikari 획득 timeout"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "sum(count_over_time({stage=\"$stage\", service=~\"$service\"} |~ \"Lock wait timeout exceeded|Deadlock found|CannotAcquireLockException\" [1m]))",
+              "queryType": "range",
+              "legendFormat": "row lock · deadlock"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "sum(count_over_time({stage=\"$stage\", service=~\"$service\"} |= \"Too many connections\" [1m]))",
+              "queryType": "range",
+              "legendFormat": "DB 연결 상한"
+            },
+            {
+              "refId": "D",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "sum(count_over_time({stage=\"$stage\", service=~\"$service\"} |~ \"RedisCommandTimeoutException|RedisConnectionFailureException|Unable to connect to Redis\" [1m]))",
+              "queryType": "range",
+              "legendFormat": "Redis 연결 · timeout"
+            },
+            {
+              "refId": "E",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "sum(count_over_time({stage=\"$stage\", service=~\"$service\"} |= \"OutOfMemoryError\" [1m]))",
+              "queryType": "range",
+              "legendFormat": "OOM"
+            },
+            {
+              "refId": "F",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "sum(count_over_time({stage=\"$stage\", service=~\"$service\"} |= \"[INTERNAL_ERROR]\" [1m]))",
+              "queryType": "range",
+              "legendFormat": "INTERNAL_ERROR (500)"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "description": "LP-01·02·04·06의 실패가 로그로 나타나는 형태. MySQL deadlock은 CloudWatch 지표가 없어 여기서 센다.",
+          "id": 6,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 33
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "WebSocket · Redis relay 로그 (태그별, 분당)",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "sum by (tag) (count_over_time({stage=\"$stage\", service=~\"$service\"} |~ `STOMP_|WS_RELAY_|_SUBSCRIBE\\]` | regexp `\\[(?P<tag>(STOMP|WS_RELAY|NON_PARTICIPANT|UNSUPPORTED)_[A-Z_]+)\\]` [1m]))",
+              "queryType": "range",
+              "legendFormat": "{{tag}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "description": "STOMP_CONNECTED(연결), WS_RELAY_SUBSCRIBED(구독 완료), WS_RELAY_PUBLISH_FAILED·HANDLE_FAILED(전달 실패), NON_PARTICIPANT_SUBSCRIBE(권한 없는 구독) (LP-05·06·16).",
+          "id": 7,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 33
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "AI · 외부 연동 로그 (분당)",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "sum by (tag) (count_over_time({stage=\"$stage\", service=~\"$service\"} |~ `AI_ANALYSIS|METER_ANALYSIS|KAKAO_|FCM_` | regexp `\\[(?P<tag>(AI_ANALYSIS|METER_ANALYSIS|KAKAO|FCM)_[A-Z_]+)\\]` [1m]))",
+              "queryType": "range",
+              "legendFormat": "{{tag}}"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "sum(count_over_time({stage=\"$stage\", service=\"fastapi\"} |~ \"request failed|unhandled error\" [1m]))",
+              "queryType": "range",
+              "legendFormat": "fastapi 오류"
+            },
+            {
+              "refId": "C",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "sum(count_over_time({stage=\"$stage\", service=\"fastapi\"} |~ \"429|rate_limit\" [1m]))",
+              "queryType": "range",
+              "legendFormat": "fastapi 429 · rate limit"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "description": "METER_ANALYSIS_REJECTED = BE 대기열 초과, AI_ANALYSIS_FAILED = FastAPI 호출 실패 (LP-08·09·14).",
+          "id": 8,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 0,
+            "y": 41
+          }
+        },
+        {
+          "type": "timeseries",
+          "title": "스케줄러 · 푸시 로그 (태그별, 분당)",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "sum by (tag) (count_over_time({stage=\"$stage\", service=~\"$service\"} |~ `_FAILED\\]|_REJECTED\\]|PUSH_` | regexp `\\[(?P<tag>(RIDE_START_REQUEST|RIDE_END_REQUEST|CARPOOL_[A-Z_]+|AUTO_CANCEL|PUSH_[A-Z_]+)(_FAILED|_REJECTED)?)\\]` [1m]))",
+              "queryType": "range",
+              "legendFormat": "{{tag}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "custom": {
+                "lineWidth": 1,
+                "fillOpacity": 10,
+                "stacking": {
+                  "mode": "none"
+                }
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "mean",
+                "max",
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "description": "rest 태스크마다 도는 sweep의 실패 (LP-13).",
+          "id": 9,
+          "gridPos": {
+            "h": 8,
+            "w": 12,
+            "x": 12,
+            "y": 41
+          }
+        },
+        {
+          "type": "logs",
+          "title": "이상 징후 로그 원문",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "{stage=\"$stage\", service=~\"$service\"} |~ `Connection is not available|Lock wait timeout|Deadlock found|Too many connections|OutOfMemoryError|RedisCommandTimeout|\\[(INTERNAL_ERROR|STOMP_INTERNAL_ERROR|WS_RELAY_[A-Z_]+_FAILED|METER_ANALYSIS_[A-Z_]+|AI_ANALYSIS_FAILED|RIDE_[A-Z_]+_FAILED|CARPOOL_[A-Z_]+_FAILED|PUSH_[A-Z_]+_FAILED|NON_PARTICIPANT_SUBSCRIBE)\\]`",
+              "queryType": "range"
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "enableLogDetails": true,
+            "prettifyLogMessage": false,
+            "dedupStrategy": "none"
+          },
+          "description": "위 패턴에 걸린 로그 줄. 부하 단계와 시각을 맞춰 원인을 찾는다.",
+          "id": 10,
+          "gridPos": {
+            "h": 12,
+            "w": 24,
+            "x": 0,
+            "y": 49
+          }
+        },
+        {
+          "type": "logs",
+          "title": "Service Connect 프록시 로그",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "expr": "{stage=\"$stage\", container=~\"ecs-service-connect.*\"}",
+              "queryType": "range"
+            }
+          ],
+          "options": {
+            "showTime": true,
+            "wrapLogMessage": true,
+            "sortOrder": "Descending",
+            "enableLogDetails": true,
+            "prettifyLogMessage": false,
+            "dedupStrategy": "none"
+          },
+          "description": "Service Connect 에이전트 컨테이너 로그(Alloy가 수집하는 경우). upstream timeout·연결 오류 확인용 (LP-08).",
+          "id": 11,
+          "gridPos": {
+            "h": 10,
+            "w": 24,
+            "x": 0,
+            "y": 61
+          }
+        }
+      ]
     }
   ]
 }
