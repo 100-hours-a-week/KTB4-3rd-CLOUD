@@ -72,7 +72,8 @@ locals {
         }
       }
     },
-    { for k, v in { environment = [for name, value in var.environment : { name = name, value = value }] } : k => v if length(var.environment) > 0 },
+    # 컨테이너 기본 시간대는 UTC → 모든 서비스에 TZ=Asia/Seoul을 기본으로 넣는다 (var.environment에서 TZ를 주면 그 값이 우선)
+    { environment = [for name, value in merge({ TZ = "Asia/Seoul" }, var.environment) : { name = name, value = value }] },
     { for k, v in { secrets = [for name, arn in var.secrets : { name = name, valueFrom = arn }] } : k => v if length(var.secrets) > 0 },
   )
 }
