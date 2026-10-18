@@ -855,3 +855,62 @@ variable "ecs_image_object_prefixes" {
   type        = list(string)
   default     = ["tmp", "profile", "meter", "transfer"]
 }
+
+# --- 백엔드 파트 dev 접근 (developer_access.tf) --------------------------------
+
+variable "dev_backend_users" {
+  description = "dev 로그·ECS 조회·ECS Exec 권한을 받을 BE IAM 사용자 이름. 비어 있으면 그룹·정책도 만들지 않는다."
+  type        = list(string)
+  default     = []
+}
+
+variable "dev_backend_group_name" {
+  description = "BE IAM 그룹 이름"
+  type        = string
+  default     = "moyeota-backend"
+}
+
+variable "dev_backend_console_access" {
+  description = "BE 사용자에게 콘솔 로그인(초기 비밀번호, 첫 로그인 때 변경 강제)을 줄지"
+  type        = bool
+  default     = true
+}
+
+variable "dev_backend_log_services" {
+  description = "BE가 조회할 dev 로그 그룹의 서비스. exec 로그 그룹은 넣지 않는다."
+  type        = list(string)
+  default     = ["rest", "websocket", "fastapi"]
+
+  validation {
+    condition     = alltrue([for s in var.dev_backend_log_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
+    error_message = "dev_backend_log_services may only contain rest, websocket, frontend, fastapi."
+  }
+}
+
+variable "dev_backend_exec_containers" {
+  description = "BE가 ECS Exec로 들어갈 수 있는 dev 컨테이너 이름"
+  type        = list(string)
+  default     = ["rest", "websocket"]
+}
+
+variable "dev_backend_ssm_groups" {
+  description = "BE가 값을 조회·수정할 dev SSM 파라미터 그룹 (ssm.tf ssm_param_keys의 키)"
+  type        = list(string)
+  default     = ["backend"]
+
+  validation {
+    condition     = alltrue([for g in var.dev_backend_ssm_groups : contains(["backend", "frontend", "ai"], g)])
+    error_message = "dev_backend_ssm_groups may only contain backend, frontend, ai."
+  }
+}
+
+variable "dev_backend_deploy_services" {
+  description = "BE가 \"새 배포 강제\"(ecs:UpdateService)로 재배포할 수 있는 dev 서비스"
+  type        = list(string)
+  default     = ["rest", "websocket"]
+
+  validation {
+    condition     = alltrue([for s in var.dev_backend_deploy_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
+    error_message = "dev_backend_deploy_services may only contain rest, websocket, frontend, fastapi."
+  }
+}
