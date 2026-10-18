@@ -47,6 +47,12 @@ locals {
       "KAKAO_REDIRECT_URI",
       "KAKAO_ADMIN_KEY", # 선택 (application-prod.yaml 기본값 빈 값)
 
+      # 내부 호출 인증 (서비스 간 내부 API 요청 검증용 공유 키)
+      "INTERNAL_API_KEY",
+
+      # 릴레이 실행 환경 구분 값 (스테이지별로 다르게 입력)
+      "MOYEOTA_RELAY_ENV",
+
       # 프론트 연동 (CORS·OAuth 콜백)
       "FRONT_URL",
       "FRONT_CALLBACK_URI",
