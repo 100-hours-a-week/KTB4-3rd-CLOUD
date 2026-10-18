@@ -809,3 +809,49 @@ variable "monitoring_grafana_alerting_enabled" {
   type        = bool
   default     = false
 }
+
+# -----------------------------------------------------------------------------
+# 앱 이미지 버킷 (images.tf)
+# -----------------------------------------------------------------------------
+
+variable "ecs_image_buckets" {
+  description = <<-EOT
+    스테이지 → 앱 이미지 버킷 이름. 여기 있는 스테이지의 ecs_image_bucket_services Task Role에 접근 권한을 붙인다.
+    stg는 사용할 버킷(dev 공유 / 별도 버킷)을 정한 뒤 추가한다. stg가 dev 버킷을 쓰면 버킷 CORS에 https://stg.moyeota.com도 넣어야 한다.
+  EOT
+  type        = map(string)
+  default = {
+    dev  = "moyeota-dev-images"
+    prod = "moyeota-prod-images"
+  }
+
+  validation {
+    condition     = alltrue([for s in keys(var.ecs_image_buckets) : contains(["dev", "stg", "prod"], s)])
+    error_message = "ecs_image_buckets keys must be dev, stg, prod."
+  }
+
+  # dev·stg 태스크가 prod 이미지 버킷에 접근하지 못하게 한다
+  validation {
+    condition = alltrue([
+      for s, b in var.ecs_image_buckets : s == "prod" || b != lookup(var.ecs_image_buckets, "prod", "")
+    ])
+    error_message = "Non-prod stages must not use the prod image bucket."
+  }
+}
+
+variable "ecs_image_bucket_services" {
+  description = "이미지 버킷 권한을 붙일 ECS 서비스(Task Role). 이미지 presigned URL 발급·확인·복사는 REST만 한다."
+  type        = list(string)
+  default     = ["rest"]
+
+  validation {
+    condition     = alltrue([for s in var.ecs_image_bucket_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
+    error_message = "ecs_image_bucket_services may only contain rest, websocket, frontend, fastapi."
+  }
+}
+
+variable "ecs_image_object_prefixes" {
+  description = "앱이 읽고 쓰는 이미지 버킷 prefix. tmp(업로드 임시) · profile(공개) · meter·transfer(정산, 비공개)."
+  type        = list(string)
+  default     = ["tmp", "profile", "meter", "transfer"]
+}
