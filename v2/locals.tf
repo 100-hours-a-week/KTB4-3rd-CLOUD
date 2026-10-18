@@ -123,11 +123,7 @@ locals {
       path_patterns = ["/api/*"]
       target_group  = "rest"
     }
-    fastapi = {
-      priority      = 30
-      path_patterns = ["/ocr/*"]
-      target_group  = "fastapi"
-    }
+    # fastapi(/ocr/*)는 내부 전용으로 바꿔 ALB 경로를 두지 않는다 — BE는 Service Connect(http://fastapi:8000)로 호출
   }
 
   prod_ingress_ports = toset([
@@ -170,6 +166,8 @@ locals {
       health_check_matcher = var.spring_health_matcher
       deregistration_delay = 120 # 장기 연결 드레이닝
     }
+    # MOYEOTA_AI_BASE_URL : BE → FastAPI 내부 호출 주소 (Service Connect 이름, 스테이지별 네임스페이스라 모든 스테이지 동일)
+    #                       Spring relaxed binding으로 moyeota.ai.base-url에 매핑된다
     rest = {
       task_cpu             = 1024
       task_memory          = 1024
@@ -177,7 +175,7 @@ locals {
       container_memory     = 960
       container_port       = var.rest_port
       additional_ports     = [var.spring_management_port]
-      environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx512m", APP_ROLE = "rest" }
+      environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx512m", APP_ROLE = "rest", MOYEOTA_AI_BASE_URL = "http://fastapi:${var.fastapi_port}" }
       path_patterns        = ["/api/*"]
       route_order          = 1
       health_check_path    = var.rest_health_path
@@ -193,7 +191,7 @@ locals {
       container_port       = var.fastapi_port
       additional_ports     = []
       environment          = { LOCAL_DEVICE = "FALSE" } # 로컬 테스트용 스위치 — 배포 환경은 항상 FALSE
-      path_patterns        = ["/ocr/*"]
+      path_patterns        = [] # 내부 전용 — ALB에 붙이지 않는다 (ecs.tf ecs_internal_only_services)
       route_order          = 2
       health_check_path    = var.fastapi_health_path
       health_check_port    = null

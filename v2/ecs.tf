@@ -43,6 +43,10 @@ locals {
     }
   ]...)
 
+  # ALB에 붙이지 않는 내부 전용 서비스. 같은 스테이지 서비스가 Service Connect(http://<name>:<port>)로만 호출한다.
+  #   fastapi : 호출하는 곳이 BE뿐이라 외부 노출하지 않는다 (/ocr/* 경로 제거)
+  ecs_internal_only_services = ["fastapi"]
+
   # 스테이지 × 서비스 → "prod-rest" 같은 키로 펼친다. 이미지가 지정된 서비스만 만든다.
   ecs_service_instances = merge([
     for stage, s in local.ecs_stages : {
@@ -51,7 +55,7 @@ locals {
         service            = svc
         image              = try(var.ecs_container_images[stage][svc], null)
         subnet_keys        = s.subnet_keys
-        alb                = s.alb
+        alb                = contains(local.ecs_internal_only_services, svc) ? null : s.alb
         log_retention_days = s.log_retention_days
 
         # 환경 변수 이름 → SSM 파라미터 ARN. 태스크 시작 시 execution role이 읽어 주입한다.
