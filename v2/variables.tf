@@ -914,3 +914,41 @@ variable "dev_backend_deploy_services" {
     error_message = "dev_backend_deploy_services may only contain rest, websocket, frontend, fastapi."
   }
 }
+
+# -----------------------------------------------------------------------------
+# FastAPI 로그 읽기 권한 (fastapi_log_access.tf)
+# -----------------------------------------------------------------------------
+
+variable "fastapi_log_read_stages" {
+  description = "FastAPI Task Role에 자기 스테이지 로그 읽기 권한을 붙일 스테이지. 해당 스테이지 fastapi 서비스가 있을 때만 생성된다."
+  type        = list(string)
+  default     = ["dev", "prod"]
+
+  validation {
+    condition     = alltrue([for s in var.fastapi_log_read_stages : contains(["dev", "stg", "prod"], s)])
+    error_message = "fastapi_log_read_stages may only contain dev, stg, prod."
+  }
+}
+
+variable "fastapi_log_read_expires_at" {
+  description = "FastAPI 로그 읽기 권한 만료 시각 (UTC, RFC3339). 기본값은 2026-11-16 00:00 KST."
+  type        = string
+  default     = "2026-11-15T15:00:00Z"
+
+  validation {
+    condition     = can(regex("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$", var.fastapi_log_read_expires_at))
+    error_message = "fastapi_log_read_expires_at must be UTC RFC3339 like 2026-11-15T15:00:00Z."
+  }
+}
+
+variable "ai_log_reader_users" {
+  description = "로컬에서 dev FastAPI 로그를 aws login으로 읽을 AI IAM 사용자 이름. 비어 있으면 그룹·정책·사용자를 만들지 않는다."
+  type        = list(string)
+  default     = []
+}
+
+variable "ai_log_reader_group_name" {
+  description = "AI 로컬 로그 조회 IAM 그룹 이름"
+  type        = string
+  default     = "moyeota-ai"
+}

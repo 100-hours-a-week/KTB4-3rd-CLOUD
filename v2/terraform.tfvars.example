@@ -114,6 +114,10 @@ ecs_service_connect_stages = []
 # --- 백엔드 파트 dev 접근 (developer_access.tf) -------------------------------
 # dev 로그(rest·websocket·fastapi)·ECS 조회·rest·websocket ECS Exec. 비우면 그룹·정책·사용자를 만들지 않는다.
 dev_backend_users = ["moyeota-backend-1", "moyeota-backend-2"]
+# --- FastAPI 로그 읽기 (fastapi_log_access.tf) ---------------------------------
+# 서버: dev·prod FastAPI Task Role에 자기 스테이지 로그 읽기 (기본값). 만료 기본값 2026-11-15T15:00:00Z (= 11/16 00:00 KST)
+# 로컬: AI 사용자는 aws login 전용 (액세스 키 생성 거부), dev fastapi 로그만. 비우면 사용자·그룹·정책을 만들지 않는다.
+ai_log_reader_users = ["moyeota-ai-1"]
 # 장애 주입 실험 템플릿 (실행 전까지 영향 없음). prod는 지정 불가.
 fis_stages = ["stg"]
 
