@@ -240,17 +240,22 @@ module "ecs_service" {
 
 # -----------------------------------------------------------------------------
 # 3-1) Service Connect (ecs_service_connect_stages에 넣은 스테이지만)
-#   rest·websocket → http://fastapi:<fastapi_port> (서버는 fastapi 하나)
+#   rest·websocket → http://fastapi:<fastapi_port>, websocket → http://rest:<rest_port>
 #   ALB 경로(/ocr/*)는 그대로 두고, 서비스 간 동기 호출만 Service Connect로 보낸다.
 #   프록시는 클라이언트 태스크에서 서버 태스크 ENI로 직접 붙으므로 fastapi 태스크 SG에 클라이언트 태스크 SG를 연다.
 # -----------------------------------------------------------------------------
 
 locals {
+  # rest는 fastapi를 부르는 클라이언트이면서, websocket이 http://rest:<rest_port>로 부르는 서버다
+  #   (Service Connect에서 server로 등록한 서비스도 같은 네임스페이스의 다른 서버를 호출할 수 있다)
   ecs_service_connect_roles = {
-    rest      = "client"
+    rest      = "server"
     websocket = "client"
     fastapi   = "server"
   }
+
+  # fastapi를 호출하는 서비스 (역할과 무관하게 SG를 열어야 하는 쪽)
+  ecs_service_connect_fastapi_callers = ["rest", "websocket"]
 
   # "stg-rest" → fastapi 태스크 SG에 열어 줄 클라이언트 태스크 SG (같은 스테이지 fastapi가 있을 때만)
   ecs_service_connect_ingress = {
@@ -260,8 +265,21 @@ locals {
     }
     if(
       contains(var.ecs_service_connect_stages, s.stage) &&
-      lookup(local.ecs_service_connect_roles, s.service, null) == "client" &&
+      contains(local.ecs_service_connect_fastapi_callers, s.service) &&
       contains(keys(local.ecs_service_instances), "${s.stage}-fastapi")
+    )
+  }
+
+  # "dev-websocket" → rest 태스크 SG에 열어 줄 websocket 태스크 SG (같은 스테이지 rest가 있을 때만)
+  ecs_service_connect_rest_ingress = {
+    for k, s in local.ecs_service_instances : k => {
+      server_sg_id = module.ecs_service["${s.stage}-rest"].task_security_group_id
+      client_sg_id = module.ecs_service[k].task_security_group_id
+    }
+    if(
+      contains(var.ecs_service_connect_stages, s.stage) &&
+      s.service == "websocket" &&
+      contains(keys(local.ecs_service_instances), "${s.stage}-rest")
     )
   }
 }
@@ -275,6 +293,17 @@ resource "aws_vpc_security_group_ingress_rule" "service_connect_fastapi" {
   ip_protocol                  = "tcp"
   from_port                    = var.fastapi_port
   to_port                      = var.fastapi_port
+}
+
+resource "aws_vpc_security_group_ingress_rule" "service_connect_rest" {
+  for_each = local.ecs_service_connect_rest_ingress
+
+  security_group_id            = each.value.server_sg_id
+  description                  = "Service Connect from ${each.key} tasks"
+  referenced_security_group_id = each.value.client_sg_id
+  ip_protocol                  = "tcp"
+  from_port                    = var.rest_port
+  to_port                      = var.rest_port
 }
 
 # Prod ECS Exec는 운영자 그룹에만 허용
