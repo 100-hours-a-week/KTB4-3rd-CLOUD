@@ -151,15 +151,18 @@ locals {
 # -----------------------------------------------------------------------------
 #   be_container_* : BE(rest·websocket) 기동 래퍼 — ecs.tf module "ecs_service"에서 rest·websocket에만 넣는다
 #                    (ecs_service_specs에 넣으면 서비스마다 타입이 달라져 ecs_service_instances를 map으로 바꾸는 곳이 깨진다)
-#                    SSM FCM_SERVICE_ACCOUNT_JSON(서비스 계정 JSON)이 "{"로 시작하면 /tmp/fcm.json(권한 600)으로 쓰고
-#                    GOOGLE_APPLICATION_CREDENTIALS=/tmp/fcm.json을 export한 뒤, JSON 환경 변수는 지우고 원래 ENTRYPOINT를 exec한다.
+#                    SSM FCM_SERVICE_ACCOUNT_JSON(서비스 계정 JSON)이 "{"로 시작하면 SSM GOOGLE_APPLICATION_CREDENTIALS 경로에
+#                    권한 600으로 쓰고 export한다 (절대 경로가 아니면 /tmp/fcm.json).
+#                    JSON이 없거나(CHANGE_ME) 파일을 못 쓰면 GOOGLE_APPLICATION_CREDENTIALS를 지워 없는 파일을 가리키지 않게 한다.
+#                    마지막에 JSON 환경 변수는 지우고 원래 ENTRYPOINT를 exec한다.
 #                    원래 ENTRYPOINT: ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"] (BE Dockerfile)
 #                    BE Dockerfile의 실행 명령이 바뀌면 여기도 같이 바꾼다.
 locals {
   be_container_services    = ["rest", "websocket"]
   be_container_entry_point = ["sh", "-c"]
   be_container_command = [join("; ", [
-    "case \"$FCM_SERVICE_ACCOUNT_JSON\" in \"{\"*) umask 077 && printf '%s' \"$FCM_SERVICE_ACCOUNT_JSON\" > /tmp/fcm.json && export GOOGLE_APPLICATION_CREDENTIALS=/tmp/fcm.json ;; esac",
+    "case \"$GOOGLE_APPLICATION_CREDENTIALS\" in /*) ;; *) GOOGLE_APPLICATION_CREDENTIALS=/tmp/fcm.json ;; esac",
+    "case \"$FCM_SERVICE_ACCOUNT_JSON\" in \"{\"*) if (umask 077 && mkdir -p \"$(dirname \"$GOOGLE_APPLICATION_CREDENTIALS\")\" && printf '%s' \"$FCM_SERVICE_ACCOUNT_JSON\" > \"$GOOGLE_APPLICATION_CREDENTIALS\"); then export GOOGLE_APPLICATION_CREDENTIALS; else echo \"FCM credential file write failed: $GOOGLE_APPLICATION_CREDENTIALS\" >&2; unset GOOGLE_APPLICATION_CREDENTIALS; fi ;; *) unset GOOGLE_APPLICATION_CREDENTIALS ;; esac",
     "unset FCM_SERVICE_ACCOUNT_JSON",
     "exec java $JAVA_OPTS -jar /app/app.jar",
   ])]
