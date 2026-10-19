@@ -5,10 +5,11 @@ GitHub Actions는 `.github/workflows/` 바로 아래 파일만 실행하므로, 
 
 | 파일 | 복사 위치 | 트리거 |
 |---|---|---|
+| `v2-be-ci.yaml` | KTB4-3rd-BE `dev-be-ci.yaml` (워크플로 이름 `BE CI` 유지) | push (dev / main / release/** / hotfix/**)·PR |
 | `v2-be-{dev,stg,prod}-cd.yaml` | KTB4-3rd-BE | `workflow_run: BE CI` (dev / release/** / main) |
-| `v2-fe-dev-ci.yaml` | KTB4-3rd-FE | push·PR (develop / main / release/**) |
+| `v2-fe-dev-ci.yaml` | KTB4-3rd-FE `dev-fe-ci.yaml` (`FE CI` 유지) | push (develop / main / release/** / hotfix/**)·PR |
 | `v2-fe-{dev,stg,prod}-cd.yaml` | KTB4-3rd-FE | `workflow_run: FE CI` |
-| `v2-ai-ci.yaml` | KTB4-3rd-AI | push·PR (develop / main / release/**) |
+| `v2-ai-ci.yaml` | KTB4-3rd-AI (`AI CI` 유지) | push (develop / main / release/** / hotfix/**)·PR |
 | `v2-ai-{dev,stg,prod}-cd.yaml` | KTB4-3rd-AI | `workflow_run: AI CI` |
 | `../../actions/ecs-deploy/action.yml` | KTB4-3rd-BE, KTB4-3rd-FE, KTB4-3rd-AI의 `.github/actions/ecs-deploy/action.yml` | CD가 로컬 action으로 사용 |
 
@@ -40,6 +41,24 @@ CD 워크플로는 **앱 레포 안에 복사한** composite action을 로컬 �
   (`v2/variables.tf`의 `github_app_repositories`). job에 `environment:`가 없으면 AssumeRole이 거부된다.
 - `vars.AWS_REGION`, `vars.ECR_REGISTRY`, `vars.ECR_REPOSITORY`, (선택) `vars.ECS_CLUSTER`
 
+## hotfix 경로
+
+Prod 긴급 수정은 `main`에서 만든 `hotfix/vX.Y.Z`로 Stg를 거치지 않고 Prod에 반영한다.
+
+```
+main ──▶ hotfix/vX.Y.Z ──push──▶ CI: hf-vX.Y.Z-<sha> 빌드·push
+              └──PR(리뷰)──▶ main ──▶ Prod CD: hf- digest 확인 ─▶ production 승인 ─▶ 배포 ─▶ prod- 태그 ─▶ 역병합 PR
+```
+
+- **CI** (`branch-policy` job): main 대상 PR은 `release/vX.Y.Z`·`hotfix/vX.Y.Z`만 허용, hotfix에 통합 브랜치(dev/develop)에만 있는 커밋이 섞이면 실패, BE는 hotfix의 Flyway 마이그레이션(`src/main/resources/db/migration`) 변경을 막는다.
+- **이미지**: hotfix 브랜치 push에서 한 번만 빌드한다. main 머지 후 재빌드하지 않고 Prod CD가 `hf-` digest를 승격한다.
+- **Stg**: hotfix는 Stg에 배포하지 않는다. Stg가 release QA 중이면 rc 이미지를 덮어쓰기 때문이다.
+- **역병합** (`backmerge` job): Prod 배포 후 main → dev/develop PR을 연다. hotfix면 남아 있는 `release/vX.Y.Z`에도 연다(끝난 release 브랜치는 삭제해 둔다).
+  - 레포 설정 *Allow GitHub Actions to create and approve pull requests*가 필요하다. 꺼져 있으면 경고와 비교 링크만 남긴다.
+  - GITHUB_TOKEN으로 만든 PR은 CI를 트리거하지 않는다. 필수 체크가 있으면 PR을 닫았다 다시 연다.
+- **CI Role** 신뢰 정책에 각 앱 레포의 `ref:refs/heads/hotfix/*`가 있어야 hf- 이미지를 push할 수 있다(불변 sub 형식).
+- **ECR**: `infra/ecr.tf` lifecycle rule 5가 Prod에 나가지 않은 `hf-` 이미지를 최근 10개만 남긴다.
+
 ## dev V1 병행 연결 (DNS 전환 전)
 
 `dev.moyeota.com`이 아직 V1 dev EC2를 가리키는 동안에는 V1 `dev-cd.yaml`을 지우지 않고 V2 CD를 **추가**한다.
@@ -70,10 +89,11 @@ ECS 서비스·컨테이너 이름은 `fastapi`, ECR은 `moyeota/ai`.
   `aws ssm put-parameter --overwrite --type SecureString --name /moyeota/v2/dev/ai/OPENAI_API_KEY_1 --value '<key>'`
 - 최초 1회: `v2/terraform.tfvars`의 `ecs_container_images.dev.fastapi`에 첫 이미지(digest)를 넣고 apply해 Dev `fastapi` 서비스를 만든다.
   이후 Task Definition은 CD가 갱신한다. (첫 digest는 AI CI가 develop에서 처음 push한 `dev-*` 태그로 확인)
-- CI Role(V1 `infra/iam.tf`)은 이미 `KTB4-3rd-AI`의 main·develop·release/* 를 신뢰하므로 변경 없음.
+- CI Role 신뢰 정책은 콘솔에서 관리되고 있어 V1 `infra/iam.tf` 코드와 다르다. 10/15 기준 AI는 `develop`만 있었으므로
+  `release/*`·`main`·`hotfix/*` ref를 **추가만** 한다 (기존 항목 유지).
 
 ### AI 레포
-- 복사: `.github/workflows/ci.yaml`(← `v2-ai-ci.yaml`, 워크플로 이름 `AI CI` 유지), `v2-ai-{dev,stg,prod}-cd.yaml`,
+- 복사: `.github/workflows/v2-ai-ci.yaml`(워크플로 이름 `AI CI` 유지), `v2-ai-{dev,stg,prod}-cd.yaml`,
   `.github/actions/ecs-deploy/action.yml`. CD가 쓰는 action 사본은 **main**에 있어야 한다.
 - 필요 조건 (CI가 여기서 실패한다)
   - 루트 `Dockerfile` — 현재 `Dockerfile.example`만 있다. 검토 후 `Dockerfile`로 확정.

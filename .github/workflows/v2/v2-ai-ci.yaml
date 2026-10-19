@@ -4,8 +4,9 @@ name: AI CI
 #   - PR            : 테스트 + Docker 빌드 검증만 (ECR push 없음)
 #   - develop push  : dev-<sha> 이미지 push → AI V2 Dev CD
 #   - release/vX.Y.Z: rc-vX.Y.Z-<sha> 이미지 push → AI Stg CD
+#   - hotfix/vX.Y.Z : hf-vX.Y.Z-<sha> 이미지 push → (main 머지 후) AI Prod CD가 승격
 #   - main push     : 빌드 검증만. Prod CD가 Stg에서 검증된 digest를 승격한다 (재빌드 금지)
-#   런타임 값(OPENAI_API_KEY 등)은 이미지에 넣지 않는다. ECS 태스크가 SSM(/moyeota/v2/<stage>/ai/*)에서 주입받는다.
+#   런타임 값(OPENAI_API_KEY_1 등)은 이미지에 넣지 않는다. ECS 태스크가 SSM(/moyeota/v2/<stage>/ai/*)에서 주입받는다.
 
 on:
   pull_request:
@@ -18,6 +19,7 @@ on:
       - develop
       - main
       - 'release/**'
+      - 'hotfix/**'
   workflow_dispatch:
 
 permissions:
@@ -32,6 +34,54 @@ env:
   PYTHON_VERSION: '3.12'
 
 jobs:
+  # 브랜치 정책 가드 (모든 요청에서 실행, 해당하지 않으면 step만 건너뛴다)
+  #   1) main으로 가는 PR은 release/vX.Y.Z 또는 hotfix/vX.Y.Z에서만 받는다.
+  #      Prod CD가 다른 원본을 거부하므로, 머지 전에 PR 단계에서 먼저 막는다.
+  #   2) hotfix는 main에서 만든 브랜치여야 한다. develop에만 있는(아직 출시되지 않은) 커밋이 섞이면 실패한다.
+  branch-policy:
+    name: Branch policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      INTEGRATION_BRANCH: develop
+      IS_HOTFIX: ${{ startsWith(github.ref_name, 'hotfix/') || startsWith(github.head_ref, 'hotfix/') }}
+
+    steps:
+      - name: Check main PR source branch
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -Eeuo pipefail
+          if [[ ! "$HEAD_REF" =~ ^(release|hotfix)/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error title=main PR 원본 브랜치 오류::main은 release/vX.Y.Z 또는 hotfix/vX.Y.Z에서만 머지한다 (현재: ${HEAD_REF})"
+            exit 1
+          fi
+
+      # hotfix일 때만 전체 히스토리를 받는다.
+      - name: Checkout
+        if: env.IS_HOTFIX == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check hotfix branch base
+        if: env.IS_HOTFIX == 'true'
+        run: |
+          set -Eeuo pipefail
+
+          unreleased="$(comm -12 \
+            <(git rev-list "origin/main..HEAD" | sort) \
+            <(git rev-list "origin/main..origin/${INTEGRATION_BRANCH}" | sort))"
+
+          if [[ -n "$unreleased" ]]; then
+            echo "::error title=hotfix 브랜치 기준 오류::${INTEGRATION_BRANCH}에만 있는 커밋이 hotfix에 섞여 있다. main에서 브랜치를 다시 만들고 수정만 cherry-pick한다."
+            git log --oneline --no-walk --stdin <<<"$unreleased" | head -20
+            exit 1
+          fi
+
   test:
     name: Tests
     runs-on: ubuntu-latest
@@ -50,28 +100,33 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      # 기본 의존성만 설치한다 (V2는 IMAGE_DEVICE=off, luna만 사용 — local/modal extras 제외)
+      # 기본 의존성만 설치한다 (V2는 LOCAL_DEVICE 미설정 → off, luna만 사용 — local/modal extras 제외)
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install . pytest
 
-      # 앱이 import되고 라우터가 올라오는지 확인 (OPENAI_API_KEY 없이도 기동돼야 한다)
+      # 앱이 import되고 라우터가 올라오는지 확인 (OPENAI_API_KEY_* 없이도 기동돼야 한다)
+      # FastAPI 0.14x부터 app.routes에 path가 없는 _IncludedRouter가 섞이므로 OpenAPI 경로로 확인한다.
       - name: Import smoke test
-        env:
-          IMAGE_DEVICE: 'off'
-        run: python -c "from app.main import app; print([r.path for r in app.routes])"
+        run: |
+          python - <<'EOF'
+          from app.main import app
+          paths = sorted(app.openapi()["paths"])
+          print(paths)
+          assert "/health" in paths, "/health 라우트가 없다"
+          EOF
 
       # 외부 API를 부르는 평가 테스트(CONGESTION_LIVE_EVAL=1)는 CI에서 돌리지 않는다.
       - name: Unit tests
         if: hashFiles('tests/**/*.py') != ''
-        env:
-          IMAGE_DEVICE: 'off'
         run: pytest -q
 
   build:
     name: Build and publish
-    needs: test
+    needs:
+      - branch-policy
+      - test
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -96,6 +151,13 @@ jobs:
             version="${GITHUB_REF_NAME#release/}"
             [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
             image_tag="rc-${version}-${GITHUB_SHA:0:7}"
+            release_version="${version#v}"
+            [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]] && push_image=true
+          elif [[ "$GITHUB_REF_NAME" == hotfix/* ]]; then
+            # main에서 만든 긴급 수정. Stg를 거치지 않고 Prod CD가 이 digest를 승격한다.
+            version="${GITHUB_REF_NAME#hotfix/}"
+            [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            image_tag="hf-${version}-${GITHUB_SHA:0:7}"
             release_version="${version#v}"
             [[ "$GITHUB_EVENT_NAME" == push || "$GITHUB_EVENT_NAME" == workflow_dispatch ]] && push_image=true
           elif [[ "$GITHUB_REF_NAME" == main ]]; then
@@ -138,7 +200,7 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          docker run -d --name ai-smoke -p 8000:8000 -e IMAGE_DEVICE=off "${IMAGE_NAME}:${IMAGE_TAG}"
+          docker run -d --name ai-smoke -p 8000:8000 "${IMAGE_NAME}:${IMAGE_TAG}"
           for _ in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8000/health; then
               docker rm -f ai-smoke >/dev/null
