@@ -102,6 +102,18 @@ variable "environment" {
   default     = {}
 }
 
+variable "entry_point" {
+  description = "컨테이너 entryPoint 재정의. null이면 이미지 ENTRYPOINT를 그대로 쓴다."
+  type        = list(string)
+  default     = null
+}
+
+variable "command" {
+  description = "컨테이너 command 재정의. null이면 이미지 CMD를 그대로 쓴다."
+  type        = list(string)
+  default     = null
+}
+
 variable "secrets" {
   description = "환경 변수 이름 → SSM/Secrets Manager ARN. 반드시 자기 스테이지 경로(/<config_path_prefix>/<stage>/*)만 넣는다."
   type        = map(string)

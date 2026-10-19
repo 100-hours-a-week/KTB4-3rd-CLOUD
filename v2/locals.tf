@@ -149,7 +149,21 @@ locals {
 #                 BE가 이 값으로 REST 컨트롤러·STOMP endpoint·Redis listener를 조건부 등록해야 실제 자원이 분리된다
 #                 (wiki「V2 WebSocket 메시지 버스와 Redis 도입 설계」— Spring profile/조건부 설정으로 경계)
 # -----------------------------------------------------------------------------
+#   be_container_* : BE(rest·websocket) 기동 래퍼 — ecs.tf module "ecs_service"에서 rest·websocket에만 넣는다
+#                    (ecs_service_specs에 넣으면 서비스마다 타입이 달라져 ecs_service_instances를 map으로 바꾸는 곳이 깨진다)
+#                    SSM FCM_SERVICE_ACCOUNT_JSON(서비스 계정 JSON)이 "{"로 시작하면 /tmp/fcm.json(권한 600)으로 쓰고
+#                    GOOGLE_APPLICATION_CREDENTIALS=/tmp/fcm.json을 export한 뒤, JSON 환경 변수는 지우고 원래 ENTRYPOINT를 exec한다.
+#                    원래 ENTRYPOINT: ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"] (BE Dockerfile)
+#                    BE Dockerfile의 실행 명령이 바뀌면 여기도 같이 바꾼다.
 locals {
+  be_container_services    = ["rest", "websocket"]
+  be_container_entry_point = ["sh", "-c"]
+  be_container_command = [join("; ", [
+    "case \"$FCM_SERVICE_ACCOUNT_JSON\" in \"{\"*) umask 077 && printf '%s' \"$FCM_SERVICE_ACCOUNT_JSON\" > /tmp/fcm.json && export GOOGLE_APPLICATION_CREDENTIALS=/tmp/fcm.json ;; esac",
+    "unset FCM_SERVICE_ACCOUNT_JSON",
+    "exec java $JAVA_OPTS -jar /app/app.jar",
+  ])]
+
   ecs_service_specs = {
     websocket = {
       task_cpu             = 512

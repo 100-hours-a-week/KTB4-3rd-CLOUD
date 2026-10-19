@@ -75,6 +75,8 @@ locals {
     # 컨테이너 기본 시간대는 UTC → 모든 서비스에 TZ=Asia/Seoul을 기본으로 넣는다 (var.environment에서 TZ를 주면 그 값이 우선)
     { environment = [for name, value in merge({ TZ = "Asia/Seoul" }, var.environment) : { name = name, value = value }] },
     { for k, v in { secrets = [for name, arn in var.secrets : { name = name, valueFrom = arn }] } : k => v if length(var.secrets) > 0 },
+    # 이미지 ENTRYPOINT/CMD 재정의 (지정한 서비스만). CD는 family 최신 revision을 기준으로 이미지만 바꾸므로 이 값을 이어받는다
+    { for k, v in { entryPoint = var.entry_point, command = var.command } : k => v if v != null },
   )
 }
 
