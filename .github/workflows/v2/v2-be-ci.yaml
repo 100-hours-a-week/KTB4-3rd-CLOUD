@@ -1,0 +1,257 @@
+name: BE CI
+
+# 원본: KTB4-3rd-CLOUD .github/workflows/v2/v2-be-ci.yaml → BE 레포 .github/workflows/dev-be-ci.yaml
+#   - PR               : 테스트·빌드 검증만 (ECR push 없음)
+#   - dev push         : dev-<sha> → BE V2 Dev CD
+#   - release/vX.Y.Z   : rc-vX.Y.Z-<sha> → BE Stg CD
+#   - hotfix/vX.Y.Z    : hf-vX.Y.Z-<sha> → (main 머지 후) BE Prod CD가 승격
+#   - main push        : 빌드 검증만. Prod CD가 검증된 digest를 승격한다 (재빌드 금지)
+
+on:
+  # PR 은 검증만 수행하고 ECR push 와 배포는 하지 않는다.
+  # hotfix/* 는 main 으로 PR 을 보내므로 아래 main 대상 PR 에 포함된다.
+  pull_request:
+    branches:
+      - dev
+      - main
+      - 'release/**'
+
+  # dev, main, release/* 로의 직접 push 는 branch protection 으로 차단되므로
+  # 이 이벤트는 사실상 "PR 이 병합되어 ref 가 전진했을 때"의 push를 의미한다.
+  # hotfix/* 는 작업 브랜치이므로 push 마다 hf- 이미지를 만든다.
+  push:
+    branches:
+      - dev
+      - main
+      - 'release/**'
+      - 'hotfix/**'
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  security-events: write
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  IMAGE_NAME: moyeota-be
+
+
+jobs:
+  # 브랜치 정책 가드 (모든 요청에서 실행, 해당하지 않으면 step만 건너뛴다)
+  #   1) main으로 가는 PR은 release/vX.Y.Z 또는 hotfix/vX.Y.Z에서만 받는다.
+  #      Prod CD가 다른 원본을 거부하므로, 머지 전에 PR 단계에서 먼저 막는다.
+  #   2) hotfix는 main에서 만든 브랜치여야 한다. dev에만 있는(아직 출시되지 않은) 커밋이 섞이면 실패한다.
+  branch-policy:
+    name: Branch policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    env:
+      INTEGRATION_BRANCH: dev
+      IS_HOTFIX: ${{ startsWith(github.ref_name, 'hotfix/') || startsWith(github.head_ref, 'hotfix/') }}
+
+    steps:
+      - name: Check main PR source branch
+        if: github.event_name == 'pull_request' && github.base_ref == 'main'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -Eeuo pipefail
+          if [[ ! "$HEAD_REF" =~ ^(release|hotfix)/v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error title=main PR 원본 브랜치 오류::main은 release/vX.Y.Z 또는 hotfix/vX.Y.Z에서만 머지한다 (현재: ${HEAD_REF})"
+            exit 1
+          fi
+
+      # hotfix일 때만 전체 히스토리를 받는다.
+      - name: Checkout
+        if: env.IS_HOTFIX == 'true'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check hotfix branch base
+        if: env.IS_HOTFIX == 'true'
+        run: |
+          set -Eeuo pipefail
+
+          unreleased="$(comm -12 \
+            <(git rev-list "origin/main..HEAD" | sort) \
+            <(git rev-list "origin/main..origin/${INTEGRATION_BRANCH}" | sort))"
+
+          if [[ -n "$unreleased" ]]; then
+            echo "::error title=hotfix 브랜치 기준 오류::${INTEGRATION_BRANCH}에만 있는 커밋이 hotfix에 섞여 있다. main에서 브랜치를 다시 만들고 수정만 cherry-pick한다."
+            git log --oneline --no-walk --stdin <<<"$unreleased" | head -20
+            exit 1
+          fi
+
+      # hotfix는 Stg 리허설 없이 Prod에 가므로 스키마 변경을 받지 않는다.
+      - name: Block DB migrations in hotfix
+        if: env.IS_HOTFIX == 'true'
+        run: |
+          set -Eeuo pipefail
+
+          changed="$(git diff --name-only "origin/main...HEAD" -- src/main/resources/db/migration)"
+          if [[ -n "$changed" ]]; then
+            echo "::error title=hotfix DB 마이그레이션 금지::hotfix에는 Flyway 마이그레이션을 넣지 않는다. release/vX.Y.Z로 Stg 리허설 후 배포한다."
+            echo "$changed"
+            exit 1
+          fi
+
+  ci:
+    needs: branch-policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+          cache: gradle
+
+      - name: Grant Gradle permission
+        run: chmod +x ./gradlew
+
+      - name: Install dependencies and run unit tests
+        run: ./gradlew --no-daemon test
+
+      - name: Build executable jar
+        run: ./gradlew --no-daemon bootJar
+
+      - name: Resolve image tag
+        id: meta
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          release_version=""
+
+          if [[ "$GITHUB_REF_NAME" == dev ]]; then
+            image_tag="dev-${GITHUB_SHA:0:7}"
+            push_image=true
+          elif [[ "$GITHUB_REF_NAME" == release/* ]]; then
+            version="${GITHUB_REF_NAME#release/}"
+            [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            image_tag="rc-${version}-${GITHUB_SHA:0:7}"
+            release_version="$version"
+            push_image=true
+          elif [[ "$GITHUB_REF_NAME" == hotfix/* ]]; then
+            # main에서 만든 긴급 수정. Stg를 거치지 않고 Prod CD가 이 digest를 승격한다.
+            version="${GITHUB_REF_NAME#hotfix/}"
+            [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            image_tag="hf-${version}-${GITHUB_SHA:0:7}"
+            release_version="$version"
+            push_image=true
+          else
+            image_tag="pr-${GITHUB_SHA:0:7}"
+            push_image=false
+          fi
+
+          {
+            echo "image_tag=$image_tag"
+            echo "push_image=$push_image"
+            echo "release_version=$release_version"
+            echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build Docker image
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+          RELEASE_VERSION: ${{ steps.meta.outputs.release_version }}
+          BUILD_DATE: ${{ steps.meta.outputs.build_date }}
+          SENTRY_AUTH_TOKEN: ${{ steps.meta.outputs.push_image == 'true' && secrets.SENTRY_AUTH_TOKEN || '' }}
+        run: |
+          set -Eeuo pipefail
+
+          DOCKER_BUILDKIT=1 docker build \
+            --file Dockerfile \
+            --tag "${IMAGE_NAME}:${IMAGE_TAG}" \
+            --build-arg "BUILD_SHA=${GITHUB_SHA}" \
+            --build-arg "RELEASE_VERSION=${RELEASE_VERSION}" \
+            --build-arg "BUILD_DATE=${BUILD_DATE}" \
+            --secret id=sentry_auth_token,env=SENTRY_AUTH_TOKEN \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --cache-from "type=gha,scope=be-${GITHUB_REF_NAME}" \
+            --cache-to "type=gha,mode=max,scope=be-${GITHUB_REF_NAME}" \
+            --load \
+            .
+        shell: bash
+
+      - name: Configure AWS credentials
+        if: steps.meta.outputs.push_image == 'true'
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-session-name: be-ci-${{ github.run_id }}
+
+      - name: Login to ECR
+        if: steps.meta.outputs.push_image == 'true'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Push image
+        if: steps.meta.outputs.push_image == 'true'
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+        run: |
+          set -Eeuo pipefail
+
+          remote_image="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+          docker tag "${IMAGE_NAME}:${IMAGE_TAG}" "$remote_image"
+          docker push "$remote_image"
+
+      - name: Resolve image digest and create release manifest
+        if: steps.meta.outputs.push_image == 'true'
+        id: release
+        env:
+          IMAGE_TAG: ${{ steps.meta.outputs.image_tag }}
+          RELEASE_VERSION: ${{ steps.meta.outputs.release_version }}
+        run: |
+          set -Eeuo pipefail
+
+          image_digest="$(aws ecr describe-images \
+            --repository-name "$ECR_REPOSITORY" \
+            --image-ids imageTag="$IMAGE_TAG" \
+            --query 'imageDetails[0].imageDigest' \
+            --output text)"
+
+          [[ "$image_digest" == sha256:* ]]
+
+          mkdir -p release-manifest
+          jq -n \
+            --arg source_branch "$GITHUB_REF_NAME" \
+            --arg source_sha "$GITHUB_SHA" \
+            --arg image_tag "$IMAGE_TAG" \
+            --arg image_digest "$image_digest" \
+            --arg release_version "$RELEASE_VERSION" \
+            --arg ecr_repository "$ECR_REPOSITORY" \
+            '{
+              source_branch: $source_branch,
+              source_sha: $source_sha,
+              image_tag: $image_tag,
+              image_digest: $image_digest,
+              release_version: $release_version,
+              ecr_repository: $ecr_repository
+            }' > release-manifest/release-manifest.json
+
+          echo "image_digest=$image_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Upload release manifest
+        if: steps.meta.outputs.push_image == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-manifest
+          path: release-manifest/release-manifest.json
+          retention-days: 14
