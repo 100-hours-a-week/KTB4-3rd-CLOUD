@@ -192,6 +192,8 @@ module "ecs_service" {
   additional_container_ports = each.value.additional_ports
   environment                = each.value.environment
   secrets                    = each.value.secrets
+  entry_point                = each.value.entry_point
+  command                    = each.value.command
   log_retention_days         = each.value.log_retention_days
 
   capacity_provider_strategy = [

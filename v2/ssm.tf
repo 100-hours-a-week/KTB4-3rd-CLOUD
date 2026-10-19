@@ -65,6 +65,14 @@ locals {
       # Actuator
       "MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE",
       "MANAGEMENT_ENDPOINT_PROMETHEUS_ENABLED",
+
+      # FCM 푸시 (Firebase)
+      #   FCM_SERVICE_ACCOUNT_JSON : 서비스 계정 JSON 내용 자체. 컨테이너 기동 시 /tmp/fcm.json으로 쓰고
+      #     GOOGLE_APPLICATION_CREDENTIALS를 그 경로로 잡는다 (locals.tf be_container_command)
+      #     Standard tier 한도 4KB → jq -c로 한 줄로 줄여서 넣는다
+      #   두 값 모두 CHANGE_ME로 남은 채 배포되면 기동이 실패한다 → apply 직후 값을 넣고 나서 배포한다
+      "MOYEOTA_NOTIFICATION_PUSH_ENABLED",
+      "FCM_SERVICE_ACCOUNT_JSON",
     ]
     frontend = [
       # NEXT_PUBLIC_* 는 빌드 시점 값이므로 여기 두지 않는다 (FE CI build-arg)

@@ -149,7 +149,19 @@ locals {
 #                 BE가 이 값으로 REST 컨트롤러·STOMP endpoint·Redis listener를 조건부 등록해야 실제 자원이 분리된다
 #                 (wiki「V2 WebSocket 메시지 버스와 Redis 도입 설계」— Spring profile/조건부 설정으로 경계)
 # -----------------------------------------------------------------------------
+#   be_container_* : BE(rest·websocket) 기동 래퍼
+#                    SSM FCM_SERVICE_ACCOUNT_JSON(서비스 계정 JSON)이 "{"로 시작하면 /tmp/fcm.json(권한 600)으로 쓰고
+#                    GOOGLE_APPLICATION_CREDENTIALS=/tmp/fcm.json을 export한 뒤, JSON 환경 변수는 지우고 원래 ENTRYPOINT를 exec한다.
+#                    원래 ENTRYPOINT: ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"] (BE Dockerfile)
+#                    BE Dockerfile의 실행 명령이 바뀌면 여기도 같이 바꾼다.
 locals {
+  be_container_entry_point = ["sh", "-c"]
+  be_container_command = [join("; ", [
+    "case \"$FCM_SERVICE_ACCOUNT_JSON\" in \"{\"*) umask 077 && printf '%s' \"$FCM_SERVICE_ACCOUNT_JSON\" > /tmp/fcm.json && export GOOGLE_APPLICATION_CREDENTIALS=/tmp/fcm.json ;; esac",
+    "unset FCM_SERVICE_ACCOUNT_JSON",
+    "exec java $JAVA_OPTS -jar /app/app.jar",
+  ])]
+
   ecs_service_specs = {
     websocket = {
       task_cpu             = 512
@@ -165,6 +177,8 @@ locals {
       health_check_port    = var.spring_management_port
       health_check_matcher = var.spring_health_matcher
       deregistration_delay = 120 # 장기 연결 드레이닝
+      entry_point          = local.be_container_entry_point
+      command              = local.be_container_command
     }
     # AI_BASE_URL : BE → FastAPI 내부 호출 주소 (Service Connect 이름, 스테이지별 네임스페이스라 모든 스테이지 동일)
     #               BE application-*.yaml이 ${AI_BASE_URL}로 읽는다 (비밀값이 아니라 SSM이 아닌 일반 환경변수)
@@ -182,6 +196,8 @@ locals {
       health_check_port    = var.spring_management_port
       health_check_matcher = var.spring_health_matcher
       deregistration_delay = 30 # Spot 2분 알림 안에 끝나도록
+      entry_point          = local.be_container_entry_point
+      command              = local.be_container_command
     }
     fastapi = {
       task_cpu             = 512
@@ -197,6 +213,8 @@ locals {
       health_check_port    = null
       health_check_matcher = "200-399"
       deregistration_delay = 30
+      entry_point          = null
+      command              = null
     }
     frontend = {
       task_cpu             = 512
@@ -212,6 +230,8 @@ locals {
       health_check_port    = null
       health_check_matcher = "200-399"
       deregistration_delay = 30
+      entry_point          = null
+      command              = null
     }
   }
 
