@@ -56,9 +56,9 @@ infra-v2/
 
 ### Stg (`moyeota-v2-stg`, dev 서브넷)
 
-Prod와 같은 4개 ASG 구조, 대수만 축소(rest-od 1/2, rest-spot 0/2, ws-od 1/3, general-od 1/2). REST 전략은 `rest-od {base 1, weight 0}` + `rest-spot {weight 1}`로 **weight 0 배치를 검증**합니다.
+Prod와 같은 4개 ASG 구조를 쓰며, 유휴 상태에서 인스턴스가 남지 않도록 min은 모두 0입니다(rest-od 0/2, rest-spot 0/2, ws-od 0/3, general-od 0/2). QA 시작 스케줄이 서비스별 기본 태스크 수를 복구하면 Capacity Provider가 필요한 호스트를 띄웁니다. REST 전략은 `rest-od {base 1, weight 0}` + `rest-spot {weight 1}`로 **weight 0 배치를 검증**합니다.
 
-websocket은 Redis Pub/Sub 크로스 태스크 검증을 위해 **2태스크(min 2 / max 3, CPU 60%, scale-in 끔)** 로 둡니다. `distinctInstance` 때문에 태스크마다 ws-od 호스트가 1대씩 필요하고, 롤링 배포(min 100 / max 200) 때 새 태스크를 놓을 1대가 더 필요해 ws-od max를 3으로 둡니다.
+QA 기본 수는 rest 1, websocket 2, frontend 1, fastapi 1입니다. REST와 websocket의 ECS Auto Scaling min은 0이고 scale-in을 끕니다. QA 종료 스케줄이 desired count를 0으로 내리면, Capacity Provider가 ASG도 0대까지 줄입니다. websocket은 Redis Pub/Sub 크로스 태스크 검증을 위해 **2태스크(CPU 60%, scale-in 끔)** 로 시작합니다. `distinctInstance` 때문에 태스크마다 ws-od 호스트가 1대씩 필요하고, 롤링 배포(min 100 / max 200) 때 새 태스크를 놓을 1대가 더 필요해 ws-od max를 3으로 둡니다.
 
 > `general-od`는 문서값 1/1 대신 **1/2**입니다. t3.small은 ENI 3개라 awsvpc 태스크가 호스트당 2개까지인데, frontend+fastapi 2개로 꽉 차면 롤링 배포(새 태스크 +1)가 배치되지 못합니다.
 

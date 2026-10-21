@@ -6,6 +6,7 @@
 #
 #   허용
 #     - 로그       : dev rest·websocket·fastapi 로그 그룹만 조회 (Service Connect 프록시 로그 포함)
+#                    stg rest·websocket·fastapi 로그 그룹도 조회만 가능 (stg_backend_log_services) — stg 서비스가 떠 있을 때만 ARN이 생긴다
 #                    exec 로그 그룹(/ecs/<cluster>/exec)은 다른 사람의 Exec 세션 기록이라 제외
 #     - ECS 상태   : dev 클러스터 서비스·태스크·컨테이너 인스턴스 조회
 #                    DescribeTaskDefinition·ListClusters는 리소스 제한이 안 되는 API라 계정 전체(*) — prod Task Definition도 보인다
@@ -19,7 +20,7 @@
 #                    UpdateService는 desired count·태스크 정의 변경도 막지 못한다 — dev 한정이라 감수
 #     - 콘솔 로그인 : 초기 비밀번호는 첫 로그인 때 변경 강제, 본인 비밀번호·액세스 키만 관리
 #
-#   주지 않음: stg·prod 전체, 태스크 정의 등록, SSM 파라미터 생성·삭제, dev frontend·ai 그룹 SSM, ssm:StartSession 직접 호출
+#   주지 않음: stg 로그 조회 외 stg 전체, prod 전체, 태스크 정의 등록, SSM 파라미터 생성·삭제, dev frontend·ai 그룹 SSM, ssm:StartSession 직접 호출
 #   주의: Exec로 들어가면 컨테이너 환경변수(SSM에서 주입된 dev 비밀값)가 보인다 — dev 한정이라 감수
 #
 #   액세스 키는 Terraform으로 만들지 않는다 (비밀 키가 state에 남는다). 사용자가 콘솔에서 직접 만든다.
@@ -52,6 +53,13 @@ locals {
     if contains(keys(local.ecs_service_instances), "dev-${svc}")
   ] : []
 
+  # 실제로 떠 있는 stg 서비스의 로그 그룹만 (stg는 QA 때만 올리므로 내려가 있으면 ARN도 없다)
+  stg_backend_log_group_arns = local.dev_backend_enabled ? [
+    for svc in var.stg_backend_log_services :
+    "arn:${local.dev_backend_partition}:logs:${local.dev_backend_region}:${local.dev_backend_account_id}:log-group:${module.ecs_service["stg-${svc}"].log_group_name}"
+    if contains(keys(local.ecs_service_instances), "stg-${svc}")
+  ] : []
+
   # 실제로 떠 있는 dev 서비스의 로그 그룹만 (서비스가 없으면 ARN도 만들지 않는다)
   dev_backend_log_group_arns = local.dev_backend_enabled ? [
     for svc in var.dev_backend_log_services :
@@ -75,6 +83,24 @@ data "aws_iam_policy_document" "dev_backend" {
       "logs:GetLogGroupFields",
     ]
     resources = flatten([for arn in local.dev_backend_log_group_arns : [arn, "${arn}:*"]])
+  }
+
+  # stg 로그는 조회만 — 로그 그룹이 없으면(stg 내려감) 문장을 만들지 않는다 (빈 resources는 정책 오류)
+  dynamic "statement" {
+    for_each = length(local.stg_backend_log_group_arns) > 0 ? [1] : []
+
+    content {
+      sid = "ReadStgAppLogs"
+      actions = [
+        "logs:FilterLogEvents",
+        "logs:GetLogEvents",
+        "logs:DescribeLogStreams",
+        "logs:StartLiveTail",
+        "logs:StartQuery",
+        "logs:GetLogGroupFields",
+      ]
+      resources = flatten([for arn in local.stg_backend_log_group_arns : [arn, "${arn}:*"]])
+    }
   }
 
   # 콘솔 목록·Logs Insights 결과 조회 — 리소스 제한이 안 되는 API (로그 내용은 위 문장에서만 허용)
