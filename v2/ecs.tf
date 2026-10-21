@@ -24,7 +24,7 @@ locals {
   #   prod    → Prod ALB     (인증서가 있으면 HTTPS)
   #   nonprod → Non-Prod ALB (dev·stg 공유, 인증서가 있으면 HTTPS)
   ecs_alb_listener_arns = {
-    prod    = var.alb_certificate_arn == null ? aws_lb_listener.http.arn : aws_lb_listener.https[0].arn
+    prod    = local.prod_tls_enabled ? aws_lb_listener.https[0].arn : aws_lb_listener.http.arn
     nonprod = local.nonprod_tls_enabled ? aws_lb_listener.nonprod_https[0].arn : aws_lb_listener.nonprod_http.arn
   }
   ecs_alb_security_group_ids = {

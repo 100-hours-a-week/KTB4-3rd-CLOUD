@@ -29,7 +29,7 @@ resource "aws_security_group" "alb" {
   }
 
   dynamic "ingress" {
-    for_each = var.alb_certificate_arn == null || var.alb_cloudfront_prefix_list_id != null ? [] : var.alb_ingress_cidrs
+    for_each = !local.prod_tls_enabled || var.alb_cloudfront_prefix_list_id != null ? [] : var.alb_ingress_cidrs
 
     content {
       description = "HTTPS from ${ingress.value}"
@@ -41,7 +41,7 @@ resource "aws_security_group" "alb" {
   }
 
   dynamic "ingress" {
-    for_each = var.alb_certificate_arn == null || var.alb_cloudfront_prefix_list_id == null ? [] : [var.alb_cloudfront_prefix_list_id]
+    for_each = !local.prod_tls_enabled || var.alb_cloudfront_prefix_list_id == null ? [] : [var.alb_cloudfront_prefix_list_id]
 
     content {
       description     = "HTTPS from CloudFront origin-facing addresses"

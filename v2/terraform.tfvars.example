@@ -29,10 +29,15 @@ dev_instance_type            = "t3.medium"
 root_volume_size_gib         = 30
 dev_data_volume_size_gib     = 30
 
-# Leave null until an ACM certificate in ap-northeast-2 is ready.
+# Prod ALB TLS (dns.tf) — prod_acm_certificate_create = true면 prod_hosts 인증서를 만들어 DNS 검증 후 443에 붙인다 (80은 리다이렉트)
+#   기존 인증서를 쓰려면 alb_certificate_arn에 ARN (그쪽이 우선). 둘 다 없으면 HTTP 전용
 alb_certificate_arn           = null
+prod_acm_certificate_create   = false
+prod_hosts                    = ["moyeota.com"]
 alb_ingress_cidrs             = ["0.0.0.0/0"]
 alb_cloudfront_prefix_list_id = null
+# Prod ALB로 ALIAS할 호스트. moyeota.com은 V1 콘솔 레코드라 기본 [] — 넘겨받을 때 import 후 추가 (빼면 레코드 삭제)
+prod_dns_records = []
 
 docker_compose_version   = "v2.39.4"
 frontend_port            = 3000
@@ -64,8 +69,9 @@ ecs_container_images = {
   # }
 }
 
-# false: Prod ECS 규칙은 "X-Moyeota-Stage: prod" 헤더 요청만 받는다 (기존 Compose 라우팅 유지)
-# true : Prod 트래픽을 ECS Service로 전환
+# Prod ECS 규칙은 항상 우선순위 1~4 (Compose 규칙 10·20보다 먼저)
+# false: "X-Moyeota-Stage: prod" 헤더 요청만 ECS로 (나머지는 Compose 쪽)
+# true : Prod ALB로 들어온 모든 요청을 ECS로 — moyeota.com DNS 전환 전에 true로 둔다
 ecs_prod_alb_cutover = false
 
 # 스테이지별 host 라우팅. dev·stg는 Non-Prod ALB를 공유하고 서브도메인으로만 나눈다.

@@ -256,17 +256,17 @@ locals {
   # 스테이지별 ALB 라우팅 (issues/ecs-alb-multi-target-groups.md 5.2, 8절)
   #   alb_key : ecs.tf의 리스너·ALB SG 선택 (prod → Prod ALB, nonprod → Non-Prod ALB)
   #
-  #   prod (Prod ALB)
-  #     컷오버 전 : 기존 Compose Target Group 규칙(우선순위 10~30)을 그대로 두고,
-  #                ECS 규칙은 X-Moyeota-Stage 헤더가 있는 요청만 받는다 (스모크 테스트 경로)
-  #     컷오버 후 : ecs_prod_alb_cutover = true → 헤더 조건을 빼고 우선순위 1~4로 기존 규칙보다 앞선다
+  #   prod (Prod ALB) — ECS 규칙은 항상 우선순위 1~4 (Compose 규칙 10·20과 기본 동작보다 먼저 평가)
+  #     컷오버 전 : ECS 규칙에 X-Moyeota-Stage: prod 헤더 조건 → 헤더 요청만 ECS, 나머지는 Compose 쪽으로 간다
+  #     컷오버 후 : ecs_prod_alb_cutover = true → 헤더 조건만 빠진다 (규칙 교체 없이 조건 update)
+  #     이전 값(컷오버 전 100~103)은 /api/* 요청이 헤더가 있어도 Compose 규칙(10·20)에 먼저 걸려 ECS로 오지 않았다.
   #   stg·dev (Non-Prod ALB, 리스너 공유)
   #     서브도메인 host-header(stg.moyeota.com / dev.moyeota.com)로만 스테이지를 나눈다. 우선순위 대역 stg 200~203, dev 300~303
   #     헤더(X-Moyeota-Stage) 대체 경로는 두지 않는다 → host 미지정 시 variables.tf 검증에서 막는다
   ecs_alb_routing = {
     prod = {
       alb_key       = "prod"
-      priority_base = var.ecs_prod_alb_cutover ? 1 : 100
+      priority_base = 1
       host_headers  = lookup(var.ecs_alb_host_headers, "prod", [])
       http_headers  = { for k, v in { "X-Moyeota-Stage" = ["prod"] } : k => v if !var.ecs_prod_alb_cutover }
     }

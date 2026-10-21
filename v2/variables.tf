@@ -144,10 +144,68 @@ variable "docker_compose_version" {
 }
 
 variable "alb_certificate_arn" {
-  description = "Optional ACM certificate ARN in ap-northeast-2. When null, the ALB serves HTTP only."
+  description = <<-EOT
+    Prod ALB HTTPS 리스너에 붙일 기존 ACM 인증서 ARN (ap-northeast-2).
+    지정하면 prod_acm_certificate_create보다 우선한다. 둘 다 없으면 Prod ALB는 HTTP 전용이다.
+  EOT
   type        = string
   default     = null
   nullable    = true
+}
+
+# -----------------------------------------------------------------------------
+# Prod 도메인 · 인증서 · DNS (dns.tf)
+# -----------------------------------------------------------------------------
+
+variable "prod_hosts" {
+  description = <<-EOT
+    Prod 도메인. 첫 값이 ACM 인증서 기본 도메인이고 나머지는 SAN이다.
+    Prod ALB 리스너 규칙에는 host 조건을 두지 않는다 (CloudFront 도입 시 Host 전달 설정에 라우팅이 묶이지 않게) → 인증서·DNS에만 쓴다.
+    값을 더하면 인증서가 교체된다 (create_before_destroy라 리스너는 새 인증서로 넘어간다).
+  EOT
+  type        = list(string)
+  default     = ["moyeota.com"]
+
+  validation {
+    condition     = length(var.prod_hosts) > 0
+    error_message = "prod_hosts에 최소 1개 도메인이 필요하다."
+  }
+}
+
+variable "prod_acm_certificate_create" {
+  description = <<-EOT
+    true: prod_hosts를 SAN으로 묶은 ACM 인증서를 만들고 route53_zone_name에서 DNS 검증한 뒤 Prod ALB HTTPS 리스너에 붙인다.
+          HTTP(80)는 443 리다이렉트로 바뀐다. alb_certificate_arn을 지정하면 그 인증서가 우선이다.
+  EOT
+  type        = bool
+  default     = false
+
+  validation {
+    condition     = !var.prod_acm_certificate_create || var.route53_zone_name != null
+    error_message = "prod_acm_certificate_create = true 이면 route53_zone_name이 필요하다."
+  }
+}
+
+variable "prod_dns_records" {
+  description = <<-EOT
+    Terraform이 Prod ALB로 ALIAS(A)할 호스트 (prod_hosts 중에서).
+    기본값 [] : moyeota.com은 V1 Prod EIP를 가리키는 콘솔 레코드라 V2 state가 소유하지 않는다.
+    DNS 전환은 CLI UPSERT로 하고(되돌리기가 빠름), 안정화 뒤 넘겨받을 때만
+      terraform import 'aws_route53_record.prod_alias["moyeota.com"]' <zone_id>_moyeota.com_A
+    후 목록에 넣는다. 넣은 뒤 목록에서 빼면 레코드가 삭제된다(서비스 중단) → 되돌릴 때는 state rm 후 CLI로 바꾼다.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = length(var.prod_dns_records) == 0 || var.route53_zone_name != null
+    error_message = "prod_dns_records를 쓰려면 route53_zone_name이 필요하다."
+  }
+
+  validation {
+    condition     = alltrue([for host in var.prod_dns_records : contains(var.prod_hosts, host)])
+    error_message = "prod_dns_records는 prod_hosts 중에서만 지정할 수 있다."
+  }
 }
 
 variable "alb_ingress_cidrs" {
@@ -340,8 +398,10 @@ variable "ecs_container_images" {
 
 variable "ecs_prod_alb_cutover" {
   description = <<-EOT
-    false(기본): Prod ECS 규칙은 X-Moyeota-Stage: prod 헤더 요청만 받고, 기존 Compose Target Group 규칙이 실제 트래픽을 받는다.
-    true       : 헤더 조건을 빼고 우선순위 1~4로 기존 규칙보다 앞서 Prod 트래픽을 ECS로 보낸다.
+    Prod ALB의 ECS 규칙(우선순위 1~4)은 Compose 규칙(10·20)과 기본 동작(Compose frontend)보다 항상 먼저 평가된다.
+    false(기본): ECS 규칙에 X-Moyeota-Stage: prod 헤더 조건을 붙인다 → 헤더가 있는 스모크 테스트 요청만 ECS로, 나머지는 Compose로 간다.
+    true       : 헤더 조건을 뺀다 → Prod ALB로 들어온 모든 요청이 ECS로 간다.
+    운영 트래픽이 Prod ALB로 들어오는 시점은 moyeota.com DNS 전환이므로, DNS 전환 전에 true로 apply한다.
   EOT
   type        = bool
   default     = false

@@ -152,3 +152,8 @@ output "alerts_sns_topic_arn" {
   description = "인프라 알람 SNS 토픽 (alerting_enabled = true일 때)"
   value       = try(aws_sns_topic.alerts[0].arn, null)
 }
+
+output "prod_certificate_arn" {
+  description = "Prod ALB HTTPS 리스너에 붙은 인증서 (null이면 HTTP 전용)"
+  value       = local.prod_certificate_arn
+}
