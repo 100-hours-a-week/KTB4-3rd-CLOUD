@@ -10,6 +10,7 @@
 | `hot-row.js` | S4 좌석 경합 (`MODE=companion`/`taxi`, `DISTRIBUTE` 대조군) | `ChatParticipationService.participate` 조건부 UPDATE / `TaxiPotService.start` FOR UPDATE·`MATCH_BUSY` |
 | `mixed.js` | S5 조회 단독 ↔ 조회+X, `PROFILE=event` 행사 스파이크 | 공용 JVM·HikariCP(10)·MySQL |
 | `cuj.js` | 참여자·모집자·택시팟 E2E 신뢰성 완료율 (SLO 97%) | 각 CUJ의 API + STOMP 첫 메시지 |
+| `migration-v1-direct.js` | DB 이관 중 V1 API 고정 부하·쓰기 원장 | V1 API → Spring → ProxySQL → 현재 writer |
 
 ## 준비 (테스트 서버에서만)
 
@@ -76,6 +77,28 @@ k6 run $COMMON -e JOURNEY=participant -e JOURNEY_RATE=1 -e DURATION=2m real/cuj.
 
 HTTP(80)만 열린 서버는 `-e ALLOW_PLAIN_TRANSPORT=true`. 정리: `real/data/cleanup.sql`.
 `real/data/`에는 토큰이 들어가므로 Git에 올리지 않는다(`.gitignore`).
+
+## DB 이관 중 V1 운영 API 직접 부하
+
+`migration-v1-direct.js`는 k6에서 지정한 **V1 API origin**으로만 요청한다. V2 URL·ALB 라우팅·DNS 비율 전환은 스크립트에 없다. S2~S9 동안 V1 backend가 계속 ProxySQL을 사용하므로, ProxySQL writer를 바꾸는 동안 같은 V1 API 호출이 현재 writer에 도달하는지 확인하는 용도다. 이 스크립트는 ProxySQL 컷오버 명령을 실행하지 않는다.
+
+`V1_DIRECT_API_URL`에는 ALB 도메인이 아니라 V1 EC2의 직접 접근 주소(또는 그 주소로 연결되는 V1 전용 host)를 지정하고, WebSocket도 같은 origin의 `/api/wss`를 쓴다. 현재 문서의 `moyeota.com`, `dev.moyeota.com`, `stg.moyeota.com`, `v1sim.moyeota.com`은 ALB 경로이므로 이 스크립트가 거부한다. 정확한 V1 origin은 배포 환경에서 확인해 넣는다.
+
+운영 API 쓰기 부하에는 전용 테스트 계정과 해당 계정이 만든 `users.json`·`fixture.json`이 필요하다. `fixture.json.base_url`은 직접 V1 origin과 일치해야 한다. 기존 `make-users.py`의 운영 JWT 비밀키 사용이나 일반 사용자 데이터 사용을 이 스크립트가 요구하지 않는다. 기본 쓰기·채팅 부하를 실행하려면 아래 두 승인 문자열을 명시해야 하며, `WRITE_RPS=0`과 `CHAT_MSG_RATE=0`을 함께 주면 읽기 전용으로 실행할 수 있다.
+
+```bash
+k6 run \
+  -e ALLOW_PLAIN_TRANSPORT=true \
+  -e V1_DIRECT_API_URL=http://<v1-ec2-direct-host> \
+  -e CONFIRM_TARGET_HOST=<v1-ec2-direct-host> \
+  -e CONFIRM_V1_PROD_LOAD=I_UNDERSTAND_V1_PROD_LOAD \
+  -e ALLOW_PROD_MUTATIONS=I_UNDERSTAND_PROD_TEST_WRITES \
+  -e RUN_ID=mig-r1 -e DURATION=20m -e READ_RPS=30 -e WRITE_RPS=15 \
+  -e CHAT_ROOMS=20 -e CHAT_MSG_RATE=10 \
+  real/migration-v1-direct.js
+```
+
+`v1-sim`은 계속 stg 전용 ProxySQL·binlog·데이터 대사 리허설 환경이다. 합성 데이터를 적재해 S1~S6과 롤백을 검증하며 V1 Prod API 요청을 대신 받지 않는다. 따라서 `v1-sim` 리허설과 이 직접 API 시나리오는 서로 다른 환경·목적을 가진다.
 
 ## SLO 판정 기준 (`lib/slo.js`)
 
