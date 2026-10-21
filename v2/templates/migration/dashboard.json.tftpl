@@ -1,0 +1,1876 @@
+{
+  "uid": "moyeota-v2-migration",
+  "title": "V2 이관 리허설 (ProxySQL)",
+  "tags": [
+    "moyeota",
+    "v2",
+    "migration",
+    "stg"
+  ],
+  "timezone": "browser",
+  "editable": false,
+  "graphTooltip": 1,
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "5s",
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "db",
+        "label": "DB",
+        "type": "textbox",
+        "query": "moyeota",
+        "current": {
+          "text": "moyeota",
+          "value": "moyeota"
+        },
+        "options": [],
+        "hide": 0
+      },
+      {
+        "name": "table",
+        "label": "테이블 (V1 기준)",
+        "type": "query",
+        "datasource": {
+          "type": "mysql",
+          "uid": "mysql-mig-v1"
+        },
+        "definition": "SELECT table_name FROM information_schema.tables WHERE table_schema = '$db' AND table_type = 'BASE TABLE' ORDER BY table_name",
+        "query": "SELECT table_name FROM information_schema.tables WHERE table_schema = '$db' AND table_type = 'BASE TABLE' ORDER BY table_name",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": {
+          "text": [
+            "All"
+          ],
+          "value": [
+            "$__all"
+          ]
+        },
+        "options": [],
+        "hide": 0,
+        "sort": 1
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "text",
+      "title": "",
+      "id": 1,
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "**V1(sim) → stg RDS 이관 리허설** — 설계 `v2-stg-proxysql-migration-test-design.md`. SQL 패널은 `mig_mon` 계정으로 V1은 relay(3307), RDS는 3306에 **직접** 접속한다 (ProxySQL을 거치지 않음 — ProxySQL이 멈춰도 DB 상태가 보인다). 복제·잠금 표는 조회 시점 값이라 새로 고침(5s) 기준으로 본다. 복제 지연 추이는 RDS `ReplicaLag`(값이 나오는지 확인 대상)로 본다. `performance_schema`가 꺼져 있으면 복제·잠금 표가 비거나 오류가 난다 (stg RDS 파라미터 확인)."
+      }
+    },
+    {
+      "type": "row",
+      "title": "ProxySQL — 쓰기 지점 hg10 (S0·S3~S5·롤백)",
+      "collapsed": false,
+      "id": 2,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "hg10 서버 상태",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "id": 3,
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 4
+      },
+      "description": "proxysql_connpool_conns_status — 1 ONLINE · 3 OFFLINE_SOFT(새 쿼리 대기) · 4 OFFLINE_HARD. 정상 상태에서 ONLINE은 항상 하나여야 한다 (writer 1개)",
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max by (endpoint) (proxysql_connpool_conns_status{job=\"migration-proxysql\", hostgroup=\"10\"})",
+          "legendFormat": "{{endpoint}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "1": {
+                  "text": "ONLINE",
+                  "color": "green",
+                  "index": 0
+                },
+                "2": {
+                  "text": "SHUNNED",
+                  "color": "red",
+                  "index": 1
+                },
+                "3": {
+                  "text": "OFFLINE_SOFT (보류)",
+                  "color": "orange",
+                  "index": 2
+                },
+                "4": {
+                  "text": "OFFLINE_HARD",
+                  "color": "text",
+                  "index": 3
+                },
+                "5": {
+                  "text": "SHUNNED_REPL_LAG",
+                  "color": "red",
+                  "index": 4
+                },
+                "6": {
+                  "text": "SHUNNED_AWS_BGD",
+                  "color": "red",
+                  "index": 5
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "text"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "auto",
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "hg10 연결 풀 (used·free)",
+      "description": "S4 게이트: 쓰기 보류(OFFLINE_SOFT) 뒤 V1 쪽 used가 0이 되어야 다음 단계로 간다",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (endpoint, status) (proxysql_connpool_conns{job=\"migration-proxysql\", hostgroup=\"10\"})",
+          "legendFormat": "{{endpoint}} {{status}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 4,
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 4
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "클라이언트 연결 (V1 backend → ProxySQL)",
+      "description": "보류 구간에 non-idle이 늘었다가 RDS ONLINE 직후 내려와야 한다",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(proxysql_client_connections_connected{job=\"migration-proxysql\"})",
+          "legendFormat": "connected",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(proxysql_client_connections_non_idle{job=\"migration-proxysql\"})",
+          "legendFormat": "non-idle (쿼리 대기 포함)",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 5,
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 4
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "백엔드별 쿼리 처리량",
+      "description": "전환 순간 V1 → RDS로 넘어가는 지점이 보류 구간 길이다",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (endpoint) (rate(proxysql_connpool_conns_queries_total{job=\"migration-proxysql\", hostgroup=\"10\"}[$__rate_interval]))",
+          "legendFormat": "{{endpoint}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 6,
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 10
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "보류 실패·오류 (1분 증가)",
+      "description": "0이어야 한다. connect_timeout_server_max(10초)를 넘기면 대기 중인 클라이언트가 9001을 받는다 → 7초 중단 기준(R-a)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(proxysql_max_connect_timeouts_total{job=\"migration-proxysql\"}[1m]))",
+          "legendFormat": "max connect timeout (9001)",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(proxysql_generated_error_packets_total{job=\"migration-proxysql\"}[1m]))",
+          "legendFormat": "ProxySQL이 만든 오류 패킷",
+          "range": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (code) (increase(proxysql_mysql_error_total{job=\"migration-proxysql\"}[1m]))",
+          "legendFormat": "backend 오류 {{code}}",
+          "range": true
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (endpoint) (increase(proxysql_connpool_conns_total{job=\"migration-proxysql\", status=\"err\"}[1m]))",
+          "legendFormat": "연결 실패 {{endpoint}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 7,
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 10
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "백엔드 ping 지연 (monitor)",
+      "description": "ProxySQL monitor(mig_mon) ping. 값이 끊기면 monitor 계정·TLS를 확인한다 (ping 실패가 쌓이면 SHUNNED)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max by (endpoint) (proxysql_connpool_conns_latency_us{job=\"migration-proxysql\", hostgroup=\"10\"})",
+          "legendFormat": "{{endpoint}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "µs",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 8,
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 10
+      }
+    },
+    {
+      "type": "row",
+      "title": "복제 · writer 판정 (S2 정방향 V1→RDS · S6~ 역방향 RDS→V1)",
+      "collapsed": false,
+      "id": 9,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "RDS — 복제 상태 (정방향: RDS가 V1 binlog 적용)",
+      "description": "S2~S4. S4 게이트: lag_s = 0, 적용 위치 = V1 위치 (위치는 `mig status`). 행이 없으면 복제가 설정되지 않은 상태",
+      "datasource": {
+        "type": "mysql",
+        "uid": "mysql-mig-rds"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "mysql-mig-rds"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  c.CHANNEL_NAME AS channel,\n  c.SOURCE_UUID AS source_uuid,\n  c.SERVICE_STATE AS io_thread,\n  (SELECT GROUP_CONCAT(DISTINCT a.SERVICE_STATE) FROM performance_schema.replication_applier_status_by_worker a WHERE a.CHANNEL_NAME = c.CHANNEL_NAME) AS sql_thread,\n  (SELECT ROUND(MAX(IF(w.APPLYING_TRANSACTION = '', 0, TIMESTAMPDIFF(MICROSECOND, w.APPLYING_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP, NOW(6)) / 1000000)), 3)\n     FROM performance_schema.replication_applier_status_by_worker w WHERE w.CHANNEL_NAME = c.CHANNEL_NAME) AS lag_s,\n  (SELECT MAX(w.LAST_APPLIED_TRANSACTION_END_APPLY_TIMESTAMP) FROM performance_schema.replication_applier_status_by_worker w WHERE w.CHANNEL_NAME = c.CHANNEL_NAME) AS last_applied_at,\n  c.LAST_HEARTBEAT_TIMESTAMP AS last_heartbeat,\n  CONCAT_WS(' | ', NULLIF(c.LAST_ERROR_MESSAGE, ''),\n    (SELECT GROUP_CONCAT(NULLIF(w.LAST_ERROR_MESSAGE, '') SEPARATOR ' | ') FROM performance_schema.replication_applier_status_by_worker w WHERE w.CHANNEL_NAME = c.CHANNEL_NAME)) AS last_error\nFROM performance_schema.replication_connection_status c"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lag_s"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "last_error"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 420
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 10,
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 18
+      }
+    },
+    {
+      "type": "table",
+      "title": "V1(sim) — 복제 상태 (역방향: V1이 RDS binlog 적용)",
+      "description": "S6 이후. 롤백 사본의 신선도(D-7). 끊겨 있으면 R-c 롤백 시 그 구간이 유실된다",
+      "datasource": {
+        "type": "mysql",
+        "uid": "mysql-mig-v1"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "mysql-mig-v1"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  c.CHANNEL_NAME AS channel,\n  c.SOURCE_UUID AS source_uuid,\n  c.SERVICE_STATE AS io_thread,\n  (SELECT GROUP_CONCAT(DISTINCT a.SERVICE_STATE) FROM performance_schema.replication_applier_status_by_worker a WHERE a.CHANNEL_NAME = c.CHANNEL_NAME) AS sql_thread,\n  (SELECT ROUND(MAX(IF(w.APPLYING_TRANSACTION = '', 0, TIMESTAMPDIFF(MICROSECOND, w.APPLYING_TRANSACTION_ORIGINAL_COMMIT_TIMESTAMP, NOW(6)) / 1000000)), 3)\n     FROM performance_schema.replication_applier_status_by_worker w WHERE w.CHANNEL_NAME = c.CHANNEL_NAME) AS lag_s,\n  (SELECT MAX(w.LAST_APPLIED_TRANSACTION_END_APPLY_TIMESTAMP) FROM performance_schema.replication_applier_status_by_worker w WHERE w.CHANNEL_NAME = c.CHANNEL_NAME) AS last_applied_at,\n  c.LAST_HEARTBEAT_TIMESTAMP AS last_heartbeat,\n  CONCAT_WS(' | ', NULLIF(c.LAST_ERROR_MESSAGE, ''),\n    (SELECT GROUP_CONCAT(NULLIF(w.LAST_ERROR_MESSAGE, '') SEPARATOR ' | ') FROM performance_schema.replication_applier_status_by_worker w WHERE w.CHANNEL_NAME = c.CHANNEL_NAME)) AS last_error\nFROM performance_schema.replication_connection_status c"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lag_s"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 1
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "last_error"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 420
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 11,
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 18
+      }
+    },
+    {
+      "type": "table",
+      "title": "RDS — writer 판정",
+      "description": "read_only 파라미터 반영 시간은 TC-12에서 잰다. active_sessions = 사용자 세션 중 Sleep이 아닌 것",
+      "datasource": {
+        "type": "mysql",
+        "uid": "mysql-mig-rds"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "mysql-mig-rds"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  @@server_id AS server_id,\n  @@read_only AS read_only,\n  @@super_read_only AS super_read_only,\n  (SELECT COUNT(*) FROM information_schema.processlist\n    WHERE command NOT IN ('Sleep', 'Daemon', 'Binlog Dump', 'Binlog Dump GTID', 'Connect')\n      AND user NOT IN ('system user', 'event_scheduler', 'mig_mon', 'rdsadmin')) AS active_sessions,\n  (SELECT COUNT(*) FROM information_schema.processlist WHERE command IN ('Binlog Dump', 'Binlog Dump GTID')) AS binlog_dump_threads"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "read_only|super_read_only"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "OFF (쓰기 가능)",
+                        "color": "green"
+                      },
+                      "1": {
+                        "text": "ON",
+                        "color": "orange"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 12,
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      }
+    },
+    {
+      "type": "table",
+      "title": "V1(sim) — writer 판정",
+      "description": "S4에서 super_read_only = ON이 되어야 한다. binlog_dump_threads = 정방향 복제 연결(RDS)",
+      "datasource": {
+        "type": "mysql",
+        "uid": "mysql-mig-v1"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "mysql-mig-v1"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  @@server_id AS server_id,\n  @@read_only AS read_only,\n  @@super_read_only AS super_read_only,\n  (SELECT COUNT(*) FROM information_schema.processlist\n    WHERE command NOT IN ('Sleep', 'Daemon', 'Binlog Dump', 'Binlog Dump GTID', 'Connect')\n      AND user NOT IN ('system user', 'event_scheduler', 'mig_mon', 'rdsadmin')) AS active_sessions,\n  (SELECT COUNT(*) FROM information_schema.processlist WHERE command IN ('Binlog Dump', 'Binlog Dump GTID')) AS binlog_dump_threads"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "read_only|super_read_only"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": {
+                        "text": "OFF (쓰기 가능)",
+                        "color": "green"
+                      },
+                      "1": {
+                        "text": "ON",
+                        "color": "orange"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 13,
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      }
+    },
+    {
+      "type": "row",
+      "title": "트랜잭션 · 잠금 (S3 직전 R-4 · S4 연결 소진 · S7 Flyway MDL R-7)",
+      "collapsed": false,
+      "id": 14,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "V1(sim) — 진행 중 트랜잭션",
+      "description": "S3 직전에 5초 넘는 트랜잭션이 있으면 보류를 미룬다 (R-4). 덤프(--single-transaction)도 여기 보인다",
+      "datasource": {
+        "type": "mysql",
+        "uid": "mysql-mig-v1"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "mysql-mig-v1"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  trx_mysql_thread_id AS thread,\n  trx_state AS state,\n  TIMESTAMPDIFF(SECOND, trx_started, NOW()) AS age_s,\n  trx_rows_locked AS rows_locked,\n  trx_rows_modified AS rows_modified,\n  LEFT(IFNULL(trx_query, ''), 160) AS query\nFROM information_schema.innodb_trx\nORDER BY trx_started\nLIMIT 20"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "age_s|wait_s"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 3
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 15,
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 28
+      }
+    },
+    {
+      "type": "table",
+      "title": "RDS — 진행 중 트랜잭션",
+      "description": "",
+      "datasource": {
+        "type": "mysql",
+        "uid": "mysql-mig-rds"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "mysql-mig-rds"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  trx_mysql_thread_id AS thread,\n  trx_state AS state,\n  TIMESTAMPDIFF(SECOND, trx_started, NOW()) AS age_s,\n  trx_rows_locked AS rows_locked,\n  trx_rows_modified AS rows_modified,\n  LEFT(IFNULL(trx_query, ''), 160) AS query\nFROM information_schema.innodb_trx\nORDER BY trx_started\nLIMIT 20"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "age_s|wait_s"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 3
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 16,
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      }
+    },
+    {
+      "type": "table",
+      "title": "V1(sim) — 잠금 대기 (row · MDL)",
+      "description": "sys.innodb_lock_waits(행 잠금) + sys.schema_table_lock_waits(메타데이터 잠금)",
+      "datasource": {
+        "type": "mysql",
+        "uid": "mysql-mig-v1"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "mysql-mig-v1"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT 'row' AS kind, waiting_pid, blocking_pid, wait_age_secs AS wait_s, locked_table AS object, LEFT(IFNULL(waiting_query, ''), 140) AS waiting_query\n  FROM sys.innodb_lock_waits\nUNION ALL\nSELECT 'mdl', waiting_pid, blocking_pid, waiting_query_secs, CONCAT(object_schema, '.', object_name), LEFT(IFNULL(waiting_query, ''), 140)\n  FROM sys.schema_table_lock_waits\nORDER BY wait_s DESC\nLIMIT 20"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "age_s|wait_s"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 3
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 17,
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 34
+      }
+    },
+    {
+      "type": "table",
+      "title": "RDS — 잠금 대기 (row · MDL)",
+      "description": "S7 Flyway DDL이 FK 부모 테이블의 긴 트랜잭션 때문에 MDL을 기다리는지 (TC-6)",
+      "datasource": {
+        "type": "mysql",
+        "uid": "mysql-mig-rds"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "mysql-mig-rds"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT 'row' AS kind, waiting_pid, blocking_pid, wait_age_secs AS wait_s, locked_table AS object, LEFT(IFNULL(waiting_query, ''), 140) AS waiting_query\n  FROM sys.innodb_lock_waits\nUNION ALL\nSELECT 'mdl', waiting_pid, blocking_pid, waiting_query_secs, CONCAT(object_schema, '.', object_name), LEFT(IFNULL(waiting_query, ''), 140)\n  FROM sys.schema_table_lock_waits\nORDER BY wait_s DESC\nLIMIT 20"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": "age_s|wait_s"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 3
+                    },
+                    {
+                      "color": "red",
+                      "value": 5
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 18,
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 34
+      }
+    },
+    {
+      "type": "row",
+      "title": "InnoDB · 연결 (DB-4 · DB-8 · R-6)",
+      "collapsed": false,
+      "id": 19,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "panels": []
+    },
+    {
+      "type": "table",
+      "title": "V1(sim) — purge 지연·연결·버퍼 풀",
+      "description": "history_list_length = InnoDB purge 지연(PostgreSQL dead tuple·vacuum 대체 지표, TC-13). buffer_pool_hit_pct는 기동 후 누적",
+      "datasource": {
+        "type": "mysql",
+        "uid": "mysql-mig-v1"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "mysql-mig-v1"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  (SELECT `COUNT` FROM information_schema.innodb_metrics WHERE NAME = 'trx_rseg_history_len') AS history_list_length,\n  (SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME = 'Threads_connected') AS threads_connected,\n  (SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME = 'Threads_running') AS threads_running,\n  @@max_connections AS max_connections,\n  ROUND(100 * (1 - (SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME = 'Innodb_buffer_pool_reads')\n    / NULLIF((SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME = 'Innodb_buffer_pool_read_requests'), 0)), 2) AS buffer_pool_hit_pct"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 20,
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      }
+    },
+    {
+      "type": "table",
+      "title": "RDS — purge 지연·연결·버퍼 풀",
+      "description": "RDS 연결 예산(R-6): ProxySQL 20 + V2 rest·ws Hikari + 복제 1 + 모니터링 5 + 관리 여유 < max_connections × 80%",
+      "datasource": {
+        "type": "mysql",
+        "uid": "mysql-mig-rds"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "mysql",
+            "uid": "mysql-mig-rds"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  (SELECT `COUNT` FROM information_schema.innodb_metrics WHERE NAME = 'trx_rseg_history_len') AS history_list_length,\n  (SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME = 'Threads_connected') AS threads_connected,\n  (SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME = 'Threads_running') AS threads_running,\n  @@max_connections AS max_connections,\n  ROUND(100 * (1 - (SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME = 'Innodb_buffer_pool_reads')\n    / NULLIF((SELECT VARIABLE_VALUE FROM performance_schema.global_status WHERE VARIABLE_NAME = 'Innodb_buffer_pool_read_requests'), 0)), 2) AS buffer_pool_hit_pct"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        }
+      },
+      "id": 21,
+      "gridPos": {
+        "h": 4,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      }
+    },
+    {
+      "type": "row",
+      "title": "RDS CloudWatch · v1-sim EC2",
+      "collapsed": false,
+      "id": 22,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 45
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "RDS 복제 지연·binlog 사용량",
+      "description": "ReplicaLag는 문서상 RDS 읽기 복제본 지표 — 외부 소스 복제(S2)에서 값이 나오는지 확인한다. BinLogDiskUsage는 백업 보존 ≥1일 때만 늘어난다",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/RDS",
+          "metricName": "ReplicaLag",
+          "dimensions": {
+            "DBInstanceIdentifier": "${rds_identifier}"
+          },
+          "matchExact": true,
+          "statistic": "Maximum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "ReplicaLag (s)"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/RDS",
+          "metricName": "BinLogDiskUsage",
+          "dimensions": {
+            "DBInstanceIdentifier": "${rds_identifier}"
+          },
+          "matchExact": true,
+          "statistic": "Maximum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "BinLogDiskUsage"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "BinLogDiskUsage"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 23,
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 46
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "RDS 연결·CPU·크레딧",
+      "description": "",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/RDS",
+          "metricName": "DatabaseConnections",
+          "dimensions": {
+            "DBInstanceIdentifier": "${rds_identifier}"
+          },
+          "matchExact": true,
+          "statistic": "Maximum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "connections"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/RDS",
+          "metricName": "CPUUtilization",
+          "dimensions": {
+            "DBInstanceIdentifier": "${rds_identifier}"
+          },
+          "matchExact": true,
+          "statistic": "Maximum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "CPU %"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/RDS",
+          "metricName": "CPUCreditBalance",
+          "dimensions": {
+            "DBInstanceIdentifier": "${rds_identifier}"
+          },
+          "matchExact": true,
+          "statistic": "Minimum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "CPU credit"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 24,
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 46
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "v1-sim EC2 CPU · RDS 쓰기 지연",
+      "description": "",
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/EC2",
+          "metricName": "CPUUtilization",
+          "dimensions": {
+            "InstanceId": "${v1_sim_instance_id}"
+          },
+          "matchExact": true,
+          "statistic": "Maximum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "v1-sim CPU %"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/RDS",
+          "metricName": "WriteLatency",
+          "dimensions": {
+            "DBInstanceIdentifier": "${rds_identifier}"
+          },
+          "matchExact": true,
+          "statistic": "Maximum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "RDS WriteLatency (s)"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "region": "default",
+          "namespace": "AWS/RDS",
+          "metricName": "FreeStorageSpace",
+          "dimensions": {
+            "DBInstanceIdentifier": "${rds_identifier}"
+          },
+          "matchExact": true,
+          "statistic": "Minimum",
+          "period": "",
+          "id": "",
+          "expression": "",
+          "label": "RDS FreeStorageSpace"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "RDS FreeStorageSpace"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "bytes"
+              },
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 25,
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 46
+      }
+    },
+    {
+      "type": "row",
+      "title": "V2 stg 앱 — Flyway·DB 오류 로그 (S7)",
+      "collapsed": false,
+      "id": 26,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 53
+      },
+      "panels": []
+    },
+    {
+      "type": "logs",
+      "title": "Flyway · DB 연결/잠금 오류 (stg rest·websocket)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "id": 27,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 54
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "editorMode": "code",
+          "queryType": "range",
+          "expr": "{stage=\"stg\", service=~\"rest|websocket\"} |~ \"(?i)flyway|Migrating schema|Successfully applied|Lock wait timeout|Deadlock|Communications link failure|Connection is not available\""
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "wrapLogMessage": true,
+        "sortOrder": "Descending",
+        "enableLogDetails": true
+      }
+    },
+    {
+      "type": "row",
+      "title": "데이터 대조 — 테이블별 COUNT(*) V1 vs RDS (펼치면 전체 스캔, D2·부하 중에는 접어 둔다)",
+      "collapsed": true,
+      "id": 29,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 62
+      },
+      "panels": [
+        {
+          "type": "stat",
+          "title": "$table",
+          "datasource": {
+            "type": "datasource",
+            "uid": "-- Mixed --"
+          },
+          "id": 28,
+          "gridPos": {
+            "h": 4,
+            "w": 6,
+            "x": 0,
+            "y": 63
+          },
+          "repeat": "table",
+          "repeatDirection": "h",
+          "maxPerRow": 4,
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "mysql",
+                "uid": "mysql-mig-v1"
+              },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT 1 AS k, COUNT(*) AS v1 FROM $${db:raw}.$${table:raw}"
+            },
+            {
+              "refId": "B",
+              "datasource": {
+                "type": "mysql",
+                "uid": "mysql-mig-rds"
+              },
+              "editorMode": "code",
+              "format": "table",
+              "rawQuery": true,
+              "rawSql": "SELECT 1 AS k, COUNT(*) AS rds FROM $${db:raw}.$${table:raw}"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "joinByField",
+              "options": {
+                "byField": "k",
+                "mode": "outer"
+              }
+            },
+            {
+              "id": "calculateField",
+              "options": {
+                "mode": "binary",
+                "binary": {
+                  "left": "v1",
+                  "operator": "-",
+                  "right": "rds"
+                },
+                "alias": "diff",
+                "replaceFields": false
+              }
+            },
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "k": true
+                }
+              }
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "fixed",
+                "fixedColor": "text"
+              },
+              "decimals": 0
+            },
+            "overrides": [
+              {
+                "matcher": {
+                  "id": "byName",
+                  "options": "diff"
+                },
+                "properties": [
+                  {
+                    "id": "color",
+                    "value": {
+                      "mode": "thresholds"
+                    }
+                  },
+                  {
+                    "id": "thresholds",
+                    "value": {
+                      "mode": "absolute",
+                      "steps": [
+                        {
+                          "color": "red",
+                          "value": null
+                        },
+                        {
+                          "color": "green",
+                          "value": 0
+                        },
+                        {
+                          "color": "red",
+                          "value": 1
+                        }
+                      ]
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "fields": "",
+              "values": false
+            },
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value_and_name",
+            "justifyMode": "auto",
+            "orientation": "vertical"
+          }
+        }
+      ]
+    }
+  ]
+}

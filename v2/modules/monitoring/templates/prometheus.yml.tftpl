@@ -47,3 +47,15 @@ scrape_configs:
       - target_label: service
         replacement: ${t.service}
 %{ endfor ~}
+%{ for t in static_scrape_targets ~}
+
+  # ${t.stage} ${t.service} — ECS 밖 고정 대상 (static_scrape_targets)
+  - job_name: ${t.job}
+    metrics_path: ${t.metrics_path}
+    scrape_interval: 15s
+    static_configs:
+      - targets: [${join(", ", [for x in t.targets : "\"${x}\""])}]
+        labels:
+          stage: ${t.stage}
+          service: ${t.service}
+%{ endfor ~}

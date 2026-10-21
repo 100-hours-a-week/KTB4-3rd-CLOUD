@@ -25,3 +25,22 @@ datasources:
     jsonData:
       authType: default
       defaultRegion: ${region}
+%{ for d in mysql_datasources ~}
+
+  # ${d.name} — 비밀번호는 Grafana 컨테이너 환경 변수 ${d.password_env} (sync.sh → ../.env)
+  - name: ${d.name}
+    uid: ${d.uid}
+    type: mysql
+    access: proxy
+    url: ${d.url}
+    user: ${d.user}
+    editable: false
+    jsonData:
+      database: information_schema
+      maxOpenConns: 5
+      maxIdleConns: 2
+      connMaxLifetime: 300
+      timeInterval: 15s
+    secureJsonData:
+      password: $__env{${d.password_env}}
+%{ endfor ~}

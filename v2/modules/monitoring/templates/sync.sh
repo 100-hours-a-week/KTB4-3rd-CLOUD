@@ -2,7 +2,8 @@
 # =============================================================================
 # moyeota-monitoring-sync (systemd timer, 1분 주기)
 #   1) S3 설정 버킷(config/) → /opt/moyeota-monitoring/config 동기화
-#   2) SSM 비밀값 → /opt/moyeota-monitoring/.env (Grafana admin 비밀번호, Discord 웹훅)
+#   2) SSM 비밀값 → /opt/moyeota-monitoring/.env (Grafana admin 비밀번호, Discord 웹훅, 이관 리허설 조회 계정)
+#      이 스크립트는 config.tf의 SSM association이 S3(bin/)에서 받아 교체한다 — 고친 뒤 apply하면 호스트에 반영된다
 #   3) docker compose로 스택을 원하는 상태로 맞추고, 바뀐 컴포넌트만 reload/restart
 #   4) 컴포넌트 상태·디스크·메모리를 CloudWatch(HEARTBEAT_NAMESPACE)로 보낸다
 #      → 모니터링 스택과 독립된 CloudWatch Alarm이 이 지표(누락 포함)로 호스트·스택 장애를 잡는다
@@ -41,6 +42,7 @@ umask 077
   printf 'GF_SECURITY_ADMIN_PASSWORD=%s\n' "$(secret GRAFANA_ADMIN_PASSWORD)"
   printf 'DISCORD_WEBHOOK_INCIDENT=%s\n' "$(secret DISCORD_WEBHOOK_INCIDENT)"
   printf 'DISCORD_WEBHOOK_ALERTS=%s\n' "$(secret DISCORD_WEBHOOK_ALERTS)"
+  printf 'MIGRATION_DB_MON_PASSWORD=%s\n' "$(secret MIGRATION_DB_MON_PASSWORD)"
 } > "$ENV_FILE.new"
 if cmp -s "$ENV_FILE.new" "$ENV_FILE"; then rm -f "$ENV_FILE.new"; else mv "$ENV_FILE.new" "$ENV_FILE"; fi
 umask 022

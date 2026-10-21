@@ -172,3 +172,14 @@ monitoring_alloy_memory = {
 # Grafana 알림 (modules/monitoring/templates/grafana/alerting.yaml.tftpl) — 서비스 지표 규칙 → Discord
 #   대상 스테이지는 alert_stages. SSM DISCORD_WEBHOOK_INCIDENT·DISCORD_WEBHOOK_ALERTS 값을 넣은 뒤 켠다
 monitoring_grafana_alerting_enabled = false
+
+# --- 이관 리허설 (migration.tf) ------------------------------------------------
+# V1(sim) ↔ stg RDS ProxySQL 컷오버 리허설 환경. 끝나면 false로 apply (stg RDS CLI teardown보다 먼저)
+migration_rehearsal_enabled  = false
+migration_stg_rds_identifier = "moyeota-v2-stg"
+# V1 Prod와 같은 backend digest. null이면 mysql·proxysql·relay만 띄운다
+migration_v1_backend_image = null
+# k6 → Non-Prod ALB → v1-sim nginx. null이면 ALB에 붙이지 않는다
+migration_v1_sim_host = null
+# D0 덤프를 dumps/d0/에 올릴 V1 Prod EC2 Role (infra/ state). null이면 업로드 허용 안 함
+migration_v1_prod_role_name = null
