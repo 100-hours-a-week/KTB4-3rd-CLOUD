@@ -123,3 +123,45 @@ variable "grafana_alert_stages" {
   type        = list(string)
   default     = []
 }
+
+# -----------------------------------------------------------------------------
+# 추가 수집 대상 (루트 migration.tf 이관 리허설 등 ECS 밖 대상)
+# -----------------------------------------------------------------------------
+
+variable "static_scrape_targets" {
+  description = "Prometheus static_configs 대상 (ECS 밖 호스트의 exporter). 고정 IP:포트"
+  type = list(object({
+    job          = string
+    stage        = string
+    service      = string
+    targets      = list(string)
+    metrics_path = string
+  }))
+  default = []
+}
+
+variable "mysql_datasources" {
+  description = <<-EOT
+    Grafana MySQL 데이터소스. 비밀번호는 Grafana 컨테이너 환경 변수(password_env)에서 읽는다
+    → sync.sh가 SSM /<prefix>/monitoring/<password_env> 값을 .env에 쓴다 (sync.sh에 키가 있어야 한다).
+  EOT
+  type = list(object({
+    name         = string
+    uid          = string
+    url          = string
+    user         = string
+    password_env = string
+  }))
+  default = []
+
+  validation {
+    condition     = alltrue([for d in var.mysql_datasources : contains(["MIGRATION_DB_MON_PASSWORD"], d.password_env)])
+    error_message = "password_env는 sync.sh가 .env에 쓰는 키(MIGRATION_DB_MON_PASSWORD)만 쓸 수 있다."
+  }
+}
+
+variable "extra_dashboards" {
+  description = "추가로 프로비저닝할 대시보드 (파일 이름 → JSON). Moyeota V2 폴더에 들어간다."
+  type        = map(string)
+  default     = {}
+}

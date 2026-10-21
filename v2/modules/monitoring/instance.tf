@@ -67,7 +67,9 @@ resource "aws_instance" "host" {
 
   lifecycle {
     # 최신 AMI가 나올 때마다 호스트가 교체되지 않도록 한다 (교체는 의도적으로 taint/replace)
-    ignore_changes = [ami]
+    # user_data: sync.sh가 user data에 들어 있어, 스크립트를 고치면 provider가 user data를 바꾸려고 인스턴스를 stop/start한다.
+    #            떠 있는 호스트의 스크립트는 config.tf의 SSM association이 교체하므로 user data 변경은 무시한다 (새 호스트는 최신 스크립트로 부팅)
+    ignore_changes = [ami, user_data]
   }
 }
 

@@ -1,0 +1,165 @@
+# =============================================================================
+# 이관 리허설 v1-sim — V1 Prod 호스트 재현 (deploy/v1-compose.yaml 기준, APP_ENV=prod)
+#   mig render가 /opt/moyeota-v1sim/compose.yaml 로 두고 같은 디렉터리의 .env 로 변수를 채운다
+#
+#   V1과 같게 둔 것 : 프로젝트·네트워크·볼륨 이름(moyeota, moyeota-app-prod, moyeota-db-prod internal),
+#                     mysql 이미지·옵션·자원 한도, backend 자원 한도·DB_HOST 주입 방식
+#   V1에 더한 것     : proxysql(app·database), relay(database + edge — internal 네트워크만으로는 포트 게시가 안 된다)
+#   V1과 다른 것     : frontend 없음(DB 이관과 무관), nginx는 API 전용 설정
+#
+#   backend·nginx는 profile "app" — V1 backend 이미지가 있을 때만 mig render가 켠다
+#   S0(ProxySQL 삽입) : `sudo mig endpoint proxysql` → V1_DB_HOST=proxysql, V1_DB_PORT=6033 으로 backend 재생성
+# =============================================================================
+name: moyeota
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-hardening: &default-hardening
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  mysql:
+    image: ${MYSQL_IMAGE:?}
+    restart: unless-stopped
+    env_file:
+      - ./env/mysql.env
+    environment:
+      TZ: Asia/Seoul
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+      - --default-time-zone=+09:00
+      - --innodb-buffer-pool-size=${MYSQL_BUFFER_POOL_SIZE:-384M}
+      - --max-connections=${MYSQL_MAX_CONNECTIONS:-151}
+    cpus: 0.50
+    mem_limit: 768m
+    memswap_limit: 768m
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - database
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'mysqladmin ping --protocol=tcp -h 127.0.0.1 -uroot -p"$${MYSQL_ROOT_PASSWORD}" --silent'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    <<: *default-hardening
+    logging: *default-logging
+
+  # 쓰기 지점 전환. 설정 파일은 datadir(proxysql-data)가 비어 있을 때만 읽는다 → 런타임 변경은 반드시 SAVE ... TO DISK
+  proxysql:
+    image: ${PROXYSQL_IMAGE:?}
+    restart: unless-stopped
+    entrypoint: ["proxysql", "-f", "-c", "/etc/proxysql.cnf", "-D", "/var/lib/proxysql"]
+    cpus: 0.50
+    mem_limit: 256m
+    memswap_limit: 256m
+    volumes:
+      - ./proxysql/proxysql.cnf:/etc/proxysql.cnf:ro
+      - proxysql-data:/var/lib/proxysql
+    ports:
+      - "127.0.0.1:6032:6032"
+      - "${HOST_PRIVATE_IP:?}:6070:6070"
+    networks:
+      - app
+      - database
+    <<: *default-hardening
+    logging: *default-logging
+
+  # 정방향 복제(RDS → V1 binlog)와 Grafana V1 조회용 TCP 중계. MySQL 컨테이너는 재생성하지 않는다
+  relay:
+    image: ${SOCAT_IMAGE:?}
+    restart: unless-stopped
+    command: ["-d", "TCP-LISTEN:3306,fork,reuseaddr,keepalive", "TCP:mysql:3306,keepalive"]
+    cpus: 0.25
+    mem_limit: 64m
+    memswap_limit: 64m
+    ports:
+      - "${HOST_PRIVATE_IP:?}:3307:3306"
+    networks:
+      - database
+      - edge
+    <<: *default-hardening
+    logging: *default-logging
+
+  backend:
+    image: ${V1_BACKEND_IMAGE:-none}
+    profiles: ["app"]
+    restart: unless-stopped
+    env_file:
+      - ./env/backend.env
+    environment:
+      TZ: Asia/Seoul
+      SPRING_PROFILES_ACTIVE: prod
+      DB_HOST: ${V1_DB_HOST:-mysql}
+      DB_PORT: "${V1_DB_PORT:-3306}"
+    cpus: 1.00
+    mem_limit: 768m
+    memswap_limit: 768m
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    networks:
+      - app
+      - database
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - 'bash -c "</dev/tcp/127.0.0.1/8080"'
+      interval: 10s
+      timeout: 3s
+      retries: 18
+      start_period: 60s
+    <<: *default-hardening
+    logging: *default-logging
+
+  nginx:
+    image: ${NGINX_IMAGE:?}
+    profiles: ["app"]
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Seoul
+    cpus: 0.15
+    mem_limit: 64m
+    memswap_limit: 64m
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - app
+    healthcheck:
+      test: [CMD, wget, -q, -O, /dev/null, http://127.0.0.1/nginx-health]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+    <<: *default-hardening
+    logging: *default-logging
+
+networks:
+  app:
+    name: moyeota-app-prod
+  database:
+    name: moyeota-db-prod
+    internal: true
+  edge:
+    name: moyeota-edge
+
+volumes:
+  mysql-data:
+    name: moyeota-mysql-prod
+  proxysql-data:
+    name: moyeota-proxysql
