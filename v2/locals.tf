@@ -296,7 +296,8 @@ locals {
 #   services   : strategy[].asg는 같은 스테이지 asg_groups 키
 #
 #   prod : rest-od 2–3 / rest-spot 0–4 / ws-od 3–4 / general-od 1–2   (app 서브넷, 단일 AZ)
-#   stg  : prod와 같은 4개 구조, 대수만 축소 (ws-od 1–3, websocket 2태스크) (dev 서브넷 — stg 서브넷은 미결)
+#   stg  : prod와 같은 4개 구조, 유휴 시 min 0 (rest-od max 2, ws-od max 3; QA 시작 시 websocket 2태스크)
+#          (dev 서브넷 — stg 서브넷은 미결)
 #   dev  : shared-spot 0–2 하나를 모든 서비스가 binpack으로 공유       (dev 서브넷, Non-Prod ALB)
 # -----------------------------------------------------------------------------
 locals {
@@ -350,7 +351,7 @@ locals {
           purchase              = "od"
           instance_types        = ["t3.small"]
           instance_requirements = null
-          min                   = 1
+          min                   = 0
           max                   = 2
         }
         rest-spot = {
@@ -368,7 +369,7 @@ locals {
           purchase              = "od"
           instance_types        = ["t3.small"]
           instance_requirements = null
-          min                   = 1
+          min                   = 0
           max                   = 3
         }
         # 문서값은 1/1이지만 frontend+fastapi 2태스크로 호스트 ENI가 차서 롤링 배포(+1 태스크)가 막힌다 → max 2
@@ -377,7 +378,7 @@ locals {
           purchase              = "od"
           instance_types        = ["t3.small"]
           instance_requirements = null
-          min                   = 1
+          min                   = 0
           max                   = 2
         }
       }
@@ -396,10 +397,13 @@ locals {
           deploy_min           = 100
           deploy_max           = 200
           autoscaling = {
-            min_capacity = 1
-            max_capacity = 3
-            cpu_target   = 60
-            scheduled    = []
+            # QA 종료 스케줄이 desiredCount를 0으로 내릴 수 있도록 min도 0으로 둔다.
+            # QA 중 REST 기본 태스크는 유지하고, scale-out만 허용한다.
+            min_capacity     = 0
+            max_capacity     = 3
+            cpu_target       = 60
+            disable_scale_in = true
+            scheduled        = []
           }
         }
         # Redis Pub/Sub 크로스 태스크 검증: 최소 2태스크를 서로 다른 호스트에 둔다.
@@ -413,7 +417,7 @@ locals {
           deploy_min           = 100
           deploy_max           = 200
           autoscaling = {
-            min_capacity     = 2
+            min_capacity     = 0
             max_capacity     = 3
             cpu_target       = 60
             disable_scale_in = true
