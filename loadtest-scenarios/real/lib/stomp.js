@@ -70,9 +70,9 @@ export function uuid() {
   return out;
 }
 
-function messageBody(roomId) {
+function messageBody(roomId, prefix = 'lt') {
   const id = uuid();
-  const head = `lt ${id}`;
+  const head = `${prefix} ${id}`;
   const content = head.length >= MESSAGE_BYTES ? head : head + ' ' + 'x'.repeat(MESSAGE_BYTES - head.length - 1);
   // 서버 Jackson은 SNAKE_CASE. 네이밍 전략이 STOMP 컨버터에 적용되지 않는 경우를 대비해 두 키를 모두 보낸다.
   return { id, content, json: JSON.stringify({ client_message_id: id, clientMessageId: id, content }) };
@@ -102,7 +102,7 @@ function handshakeParams(tags, runIdValue) {
  * 한 사용자가 채팅방에 접속해 lifetimeMs 동안 머무른다.
  * sendIntervalMs > 0 이면 주기적으로 메시지를 보내고 자신의 echo(MESSAGE)로 저장·전달 성공을 판정한다.
  */
-export function holdChatSession({ wsUrl, runIdValue, token, roomId, lifetimeMs, sendIntervalMs = 0, phase = () => 'measure', tags = {} }) {
+export function holdChatSession({ wsUrl, runIdValue, token, roomId, lifetimeMs, sendIntervalMs = 0, phase = () => 'measure', tags = {}, messagePrefix = 'lt' }) {
   const baseTags = { name: 'WS /api/wss', ...tags };
   const pending = {}; // content -> { sentAt, phase }
   let connected = false;
@@ -150,7 +150,7 @@ export function holdChatSession({ wsUrl, runIdValue, token, roomId, lifetimeMs, 
             socket.setTimeout(() => {
               const sendOne = () => {
                 if (Date.now() > stopSendingAt) return;
-                const m = messageBody(roomId);
+                const m = messageBody(roomId, messagePrefix);
                 pending[m.content] = { sentAt: Date.now(), phase: phase() };
                 socket.send(frame('SEND', { destination: `/pub/chat/${roomId}`, 'content-type': 'application/json' }, m.json));
                 chatSent.add(1, { ...baseTags, phase: phase() });
