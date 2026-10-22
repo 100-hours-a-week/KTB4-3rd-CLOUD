@@ -152,3 +152,18 @@ output "alerts_sns_topic_arn" {
   description = "인프라 알람 SNS 토픽 (alerting_enabled = true일 때)"
   value       = try(aws_sns_topic.alerts[0].arn, null)
 }
+
+output "rds" {
+  description = "스테이지별 RDS (rds_stages). master 비밀번호는 master_secret_arn(Secrets Manager)에 있다."
+  value = {
+    for stage, db in aws_db_instance.mysql : stage => {
+      identifier        = db.identifier
+      address           = db.address
+      port              = db.port
+      master_username   = db.username
+      master_secret_arn = try(db.master_user_secret[0].secret_arn, null)
+      security_group_id = aws_security_group.rds[stage].id
+      parameter_group   = aws_db_parameter_group.mysql[stage].name
+    }
+  }
+}

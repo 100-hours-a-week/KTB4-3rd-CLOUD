@@ -93,6 +93,17 @@ alarm_sns_topic_arn = null
 # dev rest·websocket 태스크 → dev EC2(compose MySQL·Redis). compose에서 포트를 호스트로 publish해야 한다.
 dev_data_ports = [3306, 6379]
 
+# --- RDS for MySQL (rds.tf) --------------------------------------------------
+# prod만 Terraform으로 만든다 (stg RDS는 QA 때만 CLI). 삭제 보호 + prevent_destroy
+rds_stages                    = []
+rds_engine_version            = "8.4.11"
+rds_instance_class            = "db.t4g.small"
+rds_allocated_storage_gib     = 20
+rds_max_allocated_storage_gib = 100
+rds_backup_retention_days     = 7
+# 이관 기간에만 RDS 3306을 열어 줄 V2 밖 출발지 (예: V1 Prod EC2 SG). 이관이 끝나면 {}
+rds_migration_source_security_group_ids = {}
+
 # --- Non-Prod DNS·인증서 (dns.tf) -------------------------------------------
 route53_zone_name = "moyeota.com"
 # V1이 쓰는 dev.moyeota.com은 넣지 않는다 (기존 레코드와 충돌). 넘겨받을 때 import 후 추가.

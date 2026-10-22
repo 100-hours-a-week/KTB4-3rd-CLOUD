@@ -441,6 +441,86 @@ variable "dev_data_ports" {
 }
 
 # -----------------------------------------------------------------------------
+# RDS for MySQL (rds.tf) — wiki「V2 DB 인프라 설계」「V2 DB 무중단 마이그레이션 설계」
+# -----------------------------------------------------------------------------
+
+variable "rds_stages" {
+  description = <<-EOT
+    Terraform으로 RDS for MySQL을 만들 스테이지. prod만 지정할 수 있다.
+    stg RDS는 QA·리허설 때만 CLI(Claude outputs/stg-rds-create.sh)로 만들고 지우므로 여기서 관리하지 않는다
+    (같은 이름 moyeota-v2-stg·moyeota-v2-mysql84·moyeota-v2-data와 겹치지 않게 prod 리소스 이름에는 스테이지를 넣는다).
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for s in var.rds_stages : s == "prod"])
+    error_message = "rds_stages에는 prod만 지정할 수 있다 (stg RDS는 CLI로 관리)."
+  }
+}
+
+variable "rds_engine_version" {
+  description = "MySQL 엔진 버전. V1 Prod MySQL(8.4.11)보다 낮으면 안 된다 (역방향 롤백 덤프·복제 호환). 자동 마이너 업그레이드는 끈다."
+  type        = string
+  default     = "8.4.11"
+}
+
+variable "rds_instance_class" {
+  description = "DB 인스턴스 클래스. stg 리허설과 같은 db.t4g.small에서 시작한다."
+  type        = string
+  default     = "db.t4g.small"
+}
+
+variable "rds_allocated_storage_gib" {
+  description = "gp3 할당 스토리지(GiB). 20 GiB 미만은 gp3로 만들 수 없다."
+  type        = number
+  default     = 20
+
+  validation {
+    condition     = var.rds_allocated_storage_gib >= 20
+    error_message = "rds_allocated_storage_gib must be at least 20 (gp3 minimum)."
+  }
+}
+
+variable "rds_max_allocated_storage_gib" {
+  description = "스토리지 자동 확장 상한(GiB). 0이면 자동 확장을 끈다."
+  type        = number
+  default     = 100
+}
+
+variable "rds_backup_retention_days" {
+  description = "자동 백업·PITR 보존 기간(일). Single-AZ의 AZ 장애 대응 수단이 백업·PITR이므로 0으로 두지 않는다."
+  type        = number
+  default     = 7
+
+  validation {
+    condition     = var.rds_backup_retention_days >= 1 && var.rds_backup_retention_days <= 35
+    error_message = "rds_backup_retention_days must be between 1 and 35."
+  }
+}
+
+variable "rds_migration_relay_port" {
+  description = "V1 Prod EC2의 binlog 중계(socat) 게시 포트. 정방향 복제(RDS → V1) 때 RDS SG 아웃바운드와 V1 SG 인바운드에 쓴다."
+  type        = number
+  default     = 3307
+}
+
+variable "rds_migration_source_security_group_ids" {
+  description = <<-EOT
+    이름 → 보안 그룹 ID. RDS 3306 인바운드를 임시로 열어 줄 V2 밖의 출발지.
+    V1 Prod EC2 SG(덤프 적재 + 컷오버 중 V1 backend의 RDS 연결)를 넣고, V1 정리 후 빼서 apply한다.
+    예) { v1-prod-ec2 = "sg-02594c8be428026d0" }
+  EOT
+  type        = map(string)
+  default     = {}
+
+  validation {
+    condition     = alltrue([for id in values(var.rds_migration_source_security_group_ids) : can(regex("^sg-[0-9a-f]+$", id))])
+    error_message = "rds_migration_source_security_group_ids values must be security group IDs (sg-...)."
+  }
+}
+
+# -----------------------------------------------------------------------------
 # Non-Prod DNS·인증서 (dns.tf)
 # -----------------------------------------------------------------------------
 
