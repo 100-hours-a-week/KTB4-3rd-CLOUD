@@ -24,10 +24,12 @@ locals {
   # 스테이지별 ElastiCache 구성 (elasticache_redis_stages에 넣은 스테이지만 생성)
   redis_stage_settings = {
     stg = {
-      replicas = 0
+      replicas  = 0
+      node_type = var.redis_node_type
     }
     prod = {
-      replicas = 1
+      replicas  = 1
+      node_type = var.redis_prod_node_type
     }
   }
 
@@ -137,7 +139,7 @@ resource "aws_elasticache_replication_group" "redis" {
 
   engine               = "redis"
   engine_version       = var.redis_engine_version
-  node_type            = var.redis_node_type
+  node_type            = local.redis_stage_settings[each.key].node_type
   parameter_group_name = var.redis_parameter_group_name
   port                 = var.redis_port
 

@@ -460,8 +460,19 @@ variable "redis_parameter_group_name" {
 }
 
 variable "redis_node_type" {
-  type    = string
-  default = "cache.t4g.micro"
+  description = "stg ElastiCache 노드 타입 (prod는 redis_prod_node_type)"
+  type        = string
+  default     = "cache.t4g.micro"
+}
+
+variable "redis_prod_node_type" {
+  description = <<-EOT
+    prod ElastiCache 노드 타입 (primary + replica 같은 타입).
+    fan-out 송신량 = 발행량 × websocket 태스크 수라 노드 송신 대역폭이 먼저 한계에 닿는다 → micro보다 기준 대역폭이 큰 small에서 시작한다.
+    바꾸면 노드가 교체(수정)되므로 저트래픽 시간대에 apply한다 (prod는 apply_immediately = false → 유지 관리 기간에 반영).
+  EOT
+  type        = string
+  default     = "cache.t4g.small"
 }
 
 variable "redis_port" {
@@ -1092,4 +1103,5 @@ variable "ai_log_reader_group_name" {
   type        = string
   default     = "moyeota-ai"
 }
+
 
