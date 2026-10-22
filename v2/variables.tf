@@ -752,6 +752,33 @@ variable "dev_instance_schedule" {
   }
 }
 
+variable "stg_qa_schedule" {
+  description = <<-EOT
+    Stg ECS QA 기간용 일회성 시작·종료 스케줄 (scheduler.tf).
+    start_at / stop_at은 timezone 기준 현지 시각이며 YYYY-MM-DDTHH:MM:SS 형식이다.
+    QA 창을 만들거나 연장할 때 미래의 시작·종료 시각을 입력하고 Terraform을 apply한다.
+    stop_at이 실행되기 전에 enabled=false로 바꾸면 종료 스케줄도 삭제되므로, QA를 일찍 끝낼 때는 stop_at을 앞당겨 apply한다.
+    QA 종료 후 enabled=false로 바꾸면 완료된 일회성 스케줄 리소스를 정리한다.
+  EOT
+  type = object({
+    enabled  = optional(bool, false)
+    timezone = optional(string, "Asia/Seoul")
+    start_at = optional(string)
+    stop_at  = optional(string)
+  })
+  default = {}
+
+  validation {
+    condition = !var.stg_qa_schedule.enabled || try(
+      regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$", var.stg_qa_schedule.start_at) != "" &&
+      regex("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}$", var.stg_qa_schedule.stop_at) != "" &&
+      var.stg_qa_schedule.start_at < var.stg_qa_schedule.stop_at,
+      false,
+    )
+    error_message = "enabled인 stg_qa_schedule은 start_at과 stop_at을 YYYY-MM-DDTHH:MM:SS 형식으로 지정하고, stop_at은 start_at보다 뒤여야 합니다."
+  }
+}
+
 # -----------------------------------------------------------------------------
 # 중앙 모니터링 (monitoring.tf) — PLG(Prometheus · Loki · Grafana) + Alloy
 #   wiki「V2 중앙 집중식 모니터링 시스템 설계」
@@ -1035,6 +1062,17 @@ variable "dev_backend_log_services" {
   validation {
     condition     = alltrue([for s in var.dev_backend_log_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
     error_message = "dev_backend_log_services may only contain rest, websocket, frontend, fastapi."
+  }
+}
+
+variable "stg_backend_log_services" {
+  description = "BE가 조회할 stg 로그 그룹의 서비스. exec 로그 그룹은 넣지 않는다."
+  type        = list(string)
+  default     = ["rest", "websocket", "fastapi"]
+
+  validation {
+    condition     = alltrue([for s in var.stg_backend_log_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
+    error_message = "stg_backend_log_services may only contain rest, websocket, frontend, fastapi."
   }
 }
 
