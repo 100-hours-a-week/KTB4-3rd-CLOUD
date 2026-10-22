@@ -151,18 +151,15 @@ locals {
 # -----------------------------------------------------------------------------
 #   be_container_* : BE(rest·websocket) 기동 래퍼 — ecs.tf module "ecs_service"에서 rest·websocket에만 넣는다
 #                    (ecs_service_specs에 넣으면 서비스마다 타입이 달라져 ecs_service_instances를 map으로 바꾸는 곳이 깨진다)
-#                    SSM FCM_SERVICE_ACCOUNT_JSON(서비스 계정 JSON)이 "{"로 시작하면 SSM GOOGLE_APPLICATION_CREDENTIALS 경로에
-#                    권한 600으로 쓰고 export한다 (절대 경로가 아니면 /tmp/fcm.json).
-#                    JSON이 없거나(CHANGE_ME) 파일을 못 쓰면 GOOGLE_APPLICATION_CREDENTIALS를 지워 없는 파일을 가리키지 않게 한다.
-#                    마지막에 JSON 환경 변수는 지우고 원래 ENTRYPOINT를 exec한다.
+#                    SSM FCM_SERVICE_ACCOUNT_JSON(서비스 계정 JSON)이 "{"로 시작하면 /tmp/fcm.json(권한 600)으로 쓰고
+#                    GOOGLE_APPLICATION_CREDENTIALS=/tmp/fcm.json을 export한 뒤, JSON 환경 변수는 지우고 원래 ENTRYPOINT를 exec한다.
 #                    원래 ENTRYPOINT: ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"] (BE Dockerfile)
 #                    BE Dockerfile의 실행 명령이 바뀌면 여기도 같이 바꾼다.
 locals {
   be_container_services    = ["rest", "websocket"]
   be_container_entry_point = ["sh", "-c"]
   be_container_command = [join("; ", [
-    "case \"$GOOGLE_APPLICATION_CREDENTIALS\" in /*) ;; *) GOOGLE_APPLICATION_CREDENTIALS=/tmp/fcm.json ;; esac",
-    "case \"$FCM_SERVICE_ACCOUNT_JSON\" in \"{\"*) if (umask 077 && mkdir -p \"$(dirname \"$GOOGLE_APPLICATION_CREDENTIALS\")\" && printf '%s' \"$FCM_SERVICE_ACCOUNT_JSON\" > \"$GOOGLE_APPLICATION_CREDENTIALS\"); then export GOOGLE_APPLICATION_CREDENTIALS; else echo \"FCM credential file write failed: $GOOGLE_APPLICATION_CREDENTIALS\" >&2; unset GOOGLE_APPLICATION_CREDENTIALS; fi ;; *) unset GOOGLE_APPLICATION_CREDENTIALS ;; esac",
+    "case \"$FCM_SERVICE_ACCOUNT_JSON\" in \"{\"*) umask 077 && printf '%s' \"$FCM_SERVICE_ACCOUNT_JSON\" > /tmp/fcm.json && export GOOGLE_APPLICATION_CREDENTIALS=/tmp/fcm.json ;; esac",
     "unset FCM_SERVICE_ACCOUNT_JSON",
     "exec java $JAVA_OPTS -jar /app/app.jar",
   ])]
@@ -259,17 +256,17 @@ locals {
   # 스테이지별 ALB 라우팅 (issues/ecs-alb-multi-target-groups.md 5.2, 8절)
   #   alb_key : ecs.tf의 리스너·ALB SG 선택 (prod → Prod ALB, nonprod → Non-Prod ALB)
   #
-  #   prod (Prod ALB)
-  #     컷오버 전 : 기존 Compose Target Group 규칙(우선순위 10~30)을 그대로 두고,
-  #                ECS 규칙은 X-Moyeota-Stage 헤더가 있는 요청만 받는다 (스모크 테스트 경로)
-  #     컷오버 후 : ecs_prod_alb_cutover = true → 헤더 조건을 빼고 우선순위 1~4로 기존 규칙보다 앞선다
+  #   prod (Prod ALB) — ECS 규칙은 항상 우선순위 1~4 (Compose 규칙 10·20과 기본 동작보다 먼저 평가)
+  #     컷오버 전 : ECS 규칙에 X-Moyeota-Stage: prod 헤더 조건 → 헤더 요청만 ECS, 나머지는 Compose 쪽으로 간다
+  #     컷오버 후 : ecs_prod_alb_cutover = true → 헤더 조건만 빠진다 (규칙 교체 없이 조건 update)
+  #     이전 값(컷오버 전 100~103)은 /api/* 요청이 헤더가 있어도 Compose 규칙(10·20)에 먼저 걸려 ECS로 오지 않았다.
   #   stg·dev (Non-Prod ALB, 리스너 공유)
   #     서브도메인 host-header(stg.moyeota.com / dev.moyeota.com)로만 스테이지를 나눈다. 우선순위 대역 stg 200~203, dev 300~303
   #     헤더(X-Moyeota-Stage) 대체 경로는 두지 않는다 → host 미지정 시 variables.tf 검증에서 막는다
   ecs_alb_routing = {
     prod = {
       alb_key       = "prod"
-      priority_base = var.ecs_prod_alb_cutover ? 1 : 100
+      priority_base = 1
       host_headers  = lookup(var.ecs_alb_host_headers, "prod", [])
       http_headers  = { for k, v in { "X-Moyeota-Stage" = ["prod"] } : k => v if !var.ecs_prod_alb_cutover }
     }
@@ -296,8 +293,7 @@ locals {
 #   services   : strategy[].asg는 같은 스테이지 asg_groups 키
 #
 #   prod : rest-od 2–3 / rest-spot 0–4 / ws-od 3–4 / general-od 1–2   (app 서브넷, 단일 AZ)
-#   stg  : prod와 같은 4개 구조, 유휴 시 min 0 (rest-od max 2, ws-od max 3; QA 시작 시 websocket 2태스크)
-#          (dev 서브넷 — stg 서브넷은 미결)
+#   stg  : prod와 같은 4개 구조, 대수만 축소 (ws-od 1–3, websocket 2태스크) (dev 서브넷 — stg 서브넷은 미결)
 #   dev  : shared-spot 0–2 하나를 모든 서비스가 binpack으로 공유       (dev 서브넷, Non-Prod ALB)
 # -----------------------------------------------------------------------------
 locals {
@@ -351,7 +347,7 @@ locals {
           purchase              = "od"
           instance_types        = ["t3.small"]
           instance_requirements = null
-          min                   = 0
+          min                   = 1
           max                   = 2
         }
         rest-spot = {
@@ -369,7 +365,7 @@ locals {
           purchase              = "od"
           instance_types        = ["t3.small"]
           instance_requirements = null
-          min                   = 0
+          min                   = 1
           max                   = 3
         }
         # 문서값은 1/1이지만 frontend+fastapi 2태스크로 호스트 ENI가 차서 롤링 배포(+1 태스크)가 막힌다 → max 2
@@ -378,7 +374,7 @@ locals {
           purchase              = "od"
           instance_types        = ["t3.small"]
           instance_requirements = null
-          min                   = 0
+          min                   = 1
           max                   = 2
         }
       }
@@ -397,13 +393,10 @@ locals {
           deploy_min           = 100
           deploy_max           = 200
           autoscaling = {
-            # QA 종료 스케줄이 desiredCount를 0으로 내릴 수 있도록 min도 0으로 둔다.
-            # QA 중 REST 기본 태스크는 유지하고, scale-out만 허용한다.
-            min_capacity     = 0
-            max_capacity     = 3
-            cpu_target       = 60
-            disable_scale_in = true
-            scheduled        = []
+            min_capacity = 1
+            max_capacity = 3
+            cpu_target   = 60
+            scheduled    = []
           }
         }
         # Redis Pub/Sub 크로스 태스크 검증: 최소 2태스크를 서로 다른 호스트에 둔다.
@@ -417,7 +410,7 @@ locals {
           deploy_min           = 100
           deploy_max           = 200
           autoscaling = {
-            min_capacity     = 0
+            min_capacity     = 2
             max_capacity     = 3
             cpu_target       = 60
             disable_scale_in = true

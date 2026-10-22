@@ -167,3 +167,8 @@ output "rds" {
     }
   }
 }
+
+output "prod_certificate_arn" {
+  description = "Prod ALB HTTPS 리스너에 붙은 인증서 (null이면 HTTP 전용)"
+  value       = local.prod_certificate_arn
+}

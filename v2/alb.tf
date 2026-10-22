@@ -1,3 +1,10 @@
+# -----------------------------------------------------------------------------
+# Prod ALB
+#   - 인증서(alb_certificate_arn 또는 prod_acm_certificate_create, dns.tf)가 있으면 443 리스너를 만들고 80은 443으로 리다이렉트한다
+#   - ECS prod 규칙(우선순위 1~4)은 ecs.tf가 이 리스너에 붙인다. 아래 Compose Target Group·규칙(10·20)·기본 동작은
+#     V2 초기 Compose 호스트용으로 남아 있고, ECS 규칙보다 늦게 평가된다 → Prod 안정화 후 정리한다
+# -----------------------------------------------------------------------------
+
 resource "aws_lb" "public" {
   name                             = "${var.project_name}-alb"
   internal                         = false
@@ -57,12 +64,12 @@ resource "aws_lb_listener" "http" {
   protocol          = "HTTP"
 
   default_action {
-    type = var.alb_certificate_arn == null ? "forward" : "redirect"
+    type = local.prod_tls_enabled ? "redirect" : "forward"
 
-    target_group_arn = var.alb_certificate_arn == null ? aws_lb_target_group.service["frontend"].arn : null
+    target_group_arn = local.prod_tls_enabled ? null : aws_lb_target_group.service["frontend"].arn
 
     dynamic "redirect" {
-      for_each = var.alb_certificate_arn == null ? [] : [true]
+      for_each = local.prod_tls_enabled ? [true] : []
 
       content {
         port        = "443"
@@ -74,12 +81,12 @@ resource "aws_lb_listener" "http" {
 }
 
 resource "aws_lb_listener" "https" {
-  count = var.alb_certificate_arn == null ? 0 : 1
+  count = local.prod_tls_enabled ? 1 : 0
 
   load_balancer_arn = aws_lb.public.arn
   port              = 443
   protocol          = "HTTPS"
-  certificate_arn   = var.alb_certificate_arn
+  certificate_arn   = local.prod_certificate_arn
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
 
   default_action {
@@ -89,7 +96,7 @@ resource "aws_lb_listener" "https" {
 }
 
 resource "aws_lb_listener_rule" "http_service_routes" {
-  for_each = var.alb_certificate_arn == null ? local.path_routes : {}
+  for_each = local.prod_tls_enabled ? {} : local.path_routes
 
   listener_arn = aws_lb_listener.http.arn
   priority     = each.value.priority
@@ -107,7 +114,7 @@ resource "aws_lb_listener_rule" "http_service_routes" {
 }
 
 resource "aws_lb_listener_rule" "https_service_routes" {
-  for_each = var.alb_certificate_arn == null ? {} : local.path_routes
+  for_each = local.prod_tls_enabled ? local.path_routes : {}
 
   listener_arn = aws_lb_listener.https[0].arn
   priority     = each.value.priority
