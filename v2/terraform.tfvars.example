@@ -93,6 +93,8 @@ dev_qa_cidrs = []
 # dev는 dev EC2 compose Redis(dev_redis_port)를 쓴다.
 # rest·websocket 태스크에는 REDIS_HOST·REDIS_PORT·CHAT_FANOUT_CHANNEL이 SSM(/moyeota/v2/<stage>/broker/*)으로 자동 주입된다.
 elasticache_redis_stages = ["stg"]
+redis_node_type          = "cache.t4g.micro" # stg
+redis_prod_node_type     = "cache.t4g.small" # prod (primary + replica)
 dev_redis_port           = 6379
 # 브로커 알람 알림 (없으면 null — 알람 상태만 남는다)
 alarm_sns_topic_arn = null
