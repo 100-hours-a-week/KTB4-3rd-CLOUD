@@ -29,6 +29,7 @@ loadtest-scenarios/migration/tools/*
 !/loadtest-scenarios/migration/tools/v1-cert-issue.sh
 !/loadtest-scenarios/migration/tools/v1-cert-install.sh
 !/loadtest-scenarios/migration/tools/v1-test-users.sh
+!/loadtest-scenarios/migration/tools/v1-switch-to-rehearsal.sh
 /loadtest-target/
 /perf/
 /scripts/
