@@ -30,9 +30,11 @@ else
   printf '          제시된 인증서 SAN: %s\n' "${san:-확인 불가}"
 fi
 
-step "T0-4 fixture 파일"
+# v1-test-users.sh는 스크립트가 있는 체크아웃의 loadtest-scenarios/out/에 쓴다
+LT_OUT="${LT_OUT:-$(cd "$(dirname "$0")/../.." && pwd)/out}"
+step "T0-4 fixture 파일 ($LT_OUT)"
 for f in prod-test-fixture.json prod-test-users.json; do
-  [[ -s "$ROOT/loadtest-scenarios/out/$f" ]] && ok "$f" || ng "$f 없음 (real/seed.js → build-fixture.py 필요)"
+  [[ -s "$LT_OUT/$f" ]] && ok "$f" || ng "$f 없음 (real/seed.js → build-fixture.py 필요)"
 done
 
 step "T1-1 리허설 Terraform"
