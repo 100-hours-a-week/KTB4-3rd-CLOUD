@@ -27,7 +27,7 @@ if (__ENV.CONFIRM_V1_PROD_LOAD !== 'I_UNDERSTAND_V1_PROD_LOAD') {
   throw new Error('For a production run, set CONFIRM_V1_PROD_LOAD=I_UNDERSTAND_V1_PROD_LOAD');
 }
 if (host === 'moyeota.com' || host === 'www.moyeota.com' || host === 'dev.moyeota.com' ||
-    host === 'stg.moyeota.com' || host === 'v1sim.moyeota.com' ||
+    host === 'stg.moyeota.com' ||
     (host.endsWith('amazonaws.com') && host.includes('.elb.'))) {
   throw new Error(`${host} is a known ALB/stage hostname; V1_DIRECT_API_URL must point to the V1 API origin`);
 }

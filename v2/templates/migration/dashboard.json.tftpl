@@ -95,7 +95,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "**V1(sim) → stg RDS 이관 리허설** — 설계 `v2-stg-proxysql-migration-test-design.md`. SQL 패널은 `mig_mon` 계정으로 V1은 relay(3307), RDS는 3306에 **직접** 접속한다 (ProxySQL을 거치지 않음 — ProxySQL이 멈춰도 DB 상태가 보인다). 복제·잠금 표는 조회 시점 값이라 새로 고침(5s) 기준으로 본다. 복제 지연 추이는 RDS `ReplicaLag`(값이 나오는지 확인 대상)로 본다. `performance_schema`가 꺼져 있으면 복제·잠금 표가 비거나 오류가 난다 (stg RDS 파라미터 확인)."
+        "content": "**V1 Prod → stg RDS 이관 리허설** — 런북 `v2-stg-migration-rehearsal-v1prod.md`. SQL 패널은 `mig_mon` 계정으로 V1은 relay(3307), RDS는 3306에 **직접** 접속한다 (ProxySQL을 거치지 않음 — ProxySQL이 멈춰도 DB 상태가 보인다). 복제·잠금 표는 조회 시점 값이라 새로 고침(5s) 기준으로 본다. 복제 지연 추이는 RDS `ReplicaLag`(값이 나오는지 확인 대상)로 본다. `performance_schema`가 꺼져 있으면 복제·잠금 표가 비거나 오류가 난다 (stg RDS 파라미터 확인)."
       }
     },
     {
@@ -623,7 +623,7 @@
     },
     {
       "type": "table",
-      "title": "V1(sim) — 복제 상태 (역방향: V1이 RDS binlog 적용)",
+      "title": "V1 Prod — 복제 상태 (역방향: V1이 RDS binlog 적용)",
       "description": "S6 이후. 롤백 사본의 신선도(D-7). 끊겨 있으면 R-c 롤백 시 그 구간이 유실된다",
       "datasource": {
         "type": "mysql",
@@ -797,7 +797,7 @@
     },
     {
       "type": "table",
-      "title": "V1(sim) — writer 판정",
+      "title": "V1 Prod — writer 판정",
       "description": "S4에서 super_read_only = ON이 되어야 한다. binlog_dump_threads = 정방향 복제 연결(RDS)",
       "datasource": {
         "type": "mysql",
@@ -877,7 +877,7 @@
     },
     {
       "type": "row",
-      "title": "트랜잭션 · 잠금 (S3 직전 R-4 · S4 연결 소진 · S7 Flyway MDL R-7)",
+      "title": "트랜잭션 · 잠금 (S3 직전 R-4 · S4 연결 소진 · S7 수동 DDL MDL R-7)",
       "collapsed": false,
       "id": 14,
       "gridPos": {
@@ -890,7 +890,7 @@
     },
     {
       "type": "table",
-      "title": "V1(sim) — 진행 중 트랜잭션",
+      "title": "V1 Prod — 진행 중 트랜잭션",
       "description": "S3 직전에 5초 넘는 트랜잭션이 있으면 보류를 미룬다 (R-4). 덤프(--single-transaction)도 여기 보인다",
       "datasource": {
         "type": "mysql",
@@ -1054,7 +1054,7 @@
     },
     {
       "type": "table",
-      "title": "V1(sim) — 잠금 대기 (row · MDL)",
+      "title": "V1 Prod — 잠금 대기 (row · MDL)",
       "description": "sys.innodb_lock_waits(행 잠금) + sys.schema_table_lock_waits(메타데이터 잠금)",
       "datasource": {
         "type": "mysql",
@@ -1137,7 +1137,7 @@
     {
       "type": "table",
       "title": "RDS — 잠금 대기 (row · MDL)",
-      "description": "S7 Flyway DDL이 FK 부모 테이블의 긴 트랜잭션 때문에 MDL을 기다리는지 (TC-6)",
+      "description": "S7 수동 적용 DDL이 FK 부모 테이블의 긴 트랜잭션 때문에 MDL을 기다리는지 확인 (TC-6)",
       "datasource": {
         "type": "mysql",
         "uid": "mysql-mig-rds"
@@ -1231,7 +1231,7 @@
     },
     {
       "type": "table",
-      "title": "V1(sim) — purge 지연·연결·버퍼 풀",
+      "title": "V1 Prod — purge 지연·연결·버퍼 풀",
       "description": "history_list_length = InnoDB purge 지연(PostgreSQL dead tuple·vacuum 대체 지표, TC-13). buffer_pool_hit_pct는 기동 후 누적",
       "datasource": {
         "type": "mysql",
@@ -1325,7 +1325,7 @@
     },
     {
       "type": "row",
-      "title": "RDS CloudWatch · v1-sim EC2",
+      "title": "RDS CloudWatch · V1 Prod EC2",
       "collapsed": false,
       "id": 22,
       "gridPos": {
@@ -1555,7 +1555,7 @@
     },
     {
       "type": "timeseries",
-      "title": "v1-sim EC2 CPU · RDS 쓰기 지연",
+      "title": "V1 Prod EC2 CPU · RDS 쓰기 지연",
       "description": "",
       "datasource": {
         "type": "cloudwatch",
@@ -1575,14 +1575,14 @@
           "namespace": "AWS/EC2",
           "metricName": "CPUUtilization",
           "dimensions": {
-            "InstanceId": "${v1_sim_instance_id}"
+            "InstanceId": "${v1_instance_id}"
           },
           "matchExact": true,
           "statistic": "Maximum",
           "period": "",
           "id": "",
           "expression": "",
-          "label": "v1-sim CPU %"
+          "label": "V1 Prod CPU %"
         },
         {
           "refId": "B",
@@ -1683,7 +1683,7 @@
     },
     {
       "type": "row",
-      "title": "V2 stg 앱 — Flyway·DB 오류 로그 (S7)",
+      "title": "V2 stg 앱·DB 오류 로그 (S7)",
       "collapsed": false,
       "id": 26,
       "gridPos": {
@@ -1696,7 +1696,7 @@
     },
     {
       "type": "logs",
-      "title": "Flyway · DB 연결/잠금 오류 (stg rest·websocket)",
+      "title": "스키마 검증·DB 연결/잠금 오류 (stg rest·websocket)",
       "datasource": {
         "type": "loki",
         "uid": "loki"
@@ -1717,7 +1717,7 @@
           },
           "editorMode": "code",
           "queryType": "range",
-          "expr": "{stage=\"stg\", service=~\"rest|websocket\"} |~ \"(?i)flyway|Migrating schema|Successfully applied|Lock wait timeout|Deadlock|Communications link failure|Connection is not available\""
+          "expr": "{stage=\"stg\", service=~\"rest|websocket\"} |~ \"(?i)Schema-validation|missing table|Data truncated|Lock wait timeout|Deadlock|Communications link failure|Connection is not available|Access denied\""
         }
       ],
       "options": {
