@@ -41,26 +41,37 @@ infra-v2/
 
 ### Prod (`moyeota-v2-prod`, app 서브넷)
 
-| ASG | 서비스 | 구매 | 타입 | min/max | 서비스 전략 |
+Prod도 Stg와 같은 공용 풀 구조입니다. `general-od`가 모든 서비스의 baseline을, `shared-spot`이 REST·frontend·FastAPI의 추가 용량을 맡습니다. 두 ASG 모두 `role=shared`입니다.
+
+| ASG | 서비스 | 구매 | 타입/요구사항 | min/max | 서비스 전략 |
 |---|---|---|---|---|---|
-| `moyeota-v2-prod-rest-od` | rest | On-Demand | t3.small | 2 / 3 | base 2, weight 0 |
-| `moyeota-v2-prod-rest-spot` | rest | Spot (price-capacity-optimized, Capacity Rebalance) | 속성 기반 vCPU 2–4, 2–8 GiB, x86 | 0 / 4 | weight 1 |
-| `moyeota-v2-prod-ws-od` | websocket | On-Demand | t3.small | 3 / 4 | base 3, weight 1 |
-| `moyeota-v2-prod-general-od` | frontend, fastapi | On-Demand | t3.small | 1 / 2 | base 1, weight 1 (각각) |
+| `moyeota-v2-prod-general-od` | rest, websocket, frontend, fastapi | On-Demand | t3.medium | 3 / 4 | rest base 2, frontend·fastapi base 1, websocket weight 1 (On-Demand 전용) |
+| `moyeota-v2-prod-shared-spot` | rest, frontend, fastapi | Spot (price-capacity-optimized, Capacity Rebalance) | vCPU 2–4, 4–8 GiB, x86 | 0 / 4 | baseline 뒤 OD:Spot weight 1:4 |
+
+t3.medium은 ENI 3개라 awsvpc 태스크가 호스트당 2개입니다. 기본 태스크 6개(rest 2, websocket 2, frontend 1, fastapi 1)가 3대를 채우고, max 4의 1대가 롤링 배포와 `distinctInstance` 배치 여유입니다. 여러 서비스를 동시에 배포하면 자리가 부족하므로 서비스별로 나눠 배포합니다.
 
 | 서비스 | 태스크 min/max | 동적 정책 | 예약 정책 (KST, 평일) | scale-in |
 |---|---|---|---|---|
 | rest | 2 / 6 | CPU 60% | 06:50·16:50 min 3 → 09:10·19:10 min 2 | 허용 |
-| websocket | 3 / 4 | CPU 60% (STOMP 세션 커스텀 지표로 교체 예정) | 없음 | **끔** (`disable_scale_in`) |
+| websocket | 2 / 4 | CPU 60% (STOMP 세션 커스텀 지표로 교체 예정) | 없음 | **끔** (`disable_scale_in`) |
 | frontend, fastapi | 1 / 2 | CPU 70% | 없음 | 허용 |
 
 ### Stg (`moyeota-v2-stg`, dev 서브넷)
 
-Prod와 같은 4개 ASG 구조를 쓰며, 유휴 상태에서 인스턴스가 남지 않도록 min은 모두 0입니다(rest-od 0/2, rest-spot 0/2, ws-od 0/3, general-od 0/2). QA 시작 스케줄이 서비스별 기본 태스크 수를 복구하면 Capacity Provider가 필요한 호스트를 띄웁니다. REST 전략은 `rest-od {base 1, weight 0}` + `rest-spot {weight 1}`로 **weight 0 배치를 검증**합니다.
+Stg는 `general-od`를 공용 On-Demand baseline으로 쓰고, `shared-spot`을 REST·frontend·FastAPI의 burst 용량으로 공유합니다. 두 ASG 모두 `role=shared`라 서비스별 인스턴스 역할 제약 없이 Capacity Provider 전략으로 구매 유형을 고릅니다. WebSocket은 장기 연결과 Spot 회수 영향을 고려해 On-Demand에만 배치합니다.
 
-QA 기본 수는 rest 1, websocket 2, frontend 1, fastapi 1입니다. REST와 websocket의 ECS Auto Scaling min은 0이고 scale-in을 끕니다. QA 종료 스케줄이 desired count를 0으로 내리면, Capacity Provider가 ASG도 0대까지 줄입니다. websocket은 Redis Pub/Sub 크로스 태스크 검증을 위해 **2태스크(CPU 60%, scale-in 끔)** 로 시작합니다. `distinctInstance` 때문에 태스크마다 ws-od 호스트가 1대씩 필요하고, 롤링 배포(min 100 / max 200) 때 새 태스크를 놓을 1대가 더 필요해 ws-od max를 3으로 둡니다.
+| ASG | 서비스 | 구매 | 타입/요구사항 | min/max | 서비스 전략 |
+|---|---|---|---|---|---|
+| `moyeota-v2-stg-general-od` | rest, websocket, frontend, fastapi | On-Demand | t3.medium | 0 / 4 | 서비스별 baseline 태스크는 base로 이 풀에 둠 |
+| `moyeota-v2-stg-shared-spot` | rest, frontend, fastapi | Spot | vCPU 2–4, 4–8 GiB, x86 | 0 / 2 | baseline 뒤 OD:Spot weight 1:4 |
 
-> `general-od`는 문서값 1/1 대신 **1/2**입니다. t3.small은 ENI 3개라 awsvpc 태스크가 호스트당 2개까지인데, frontend+fastapi 2개로 꽉 차면 롤링 배포(새 태스크 +1)가 배치되지 못합니다.
+QA 기본 수는 rest 2, websocket 2, frontend(Next) 1, fastapi 1입니다. REST와 websocket은 `distinctInstance=true`를 유지해 각 서비스의 두 태스크가 서로 다른 호스트에 놓입니다. On-Demand ASG의 min은 0으로 두어 QA 시작 시 필요한 용량을 Capacity Provider가 띄우고, QA 종료 스케줄이 서비스 desired count를 0으로 내리면 유휴 호스트도 0대까지 줄입니다. 기본 태스크 6개가 t3.medium 3대(6자리)를 채우므로, ASG max 4의 1대가 `distinctInstance` 배치와 롤링 배포 여유입니다.
+
+| 서비스 | 태스크 min/max | 동적 정책 | scale-in |
+|---|---|---|---|
+| rest | 2 / 4 | CPU 60% | 허용 |
+| websocket | 2 / 3 | CPU 60% (STOMP 세션 커스텀 지표로 교체 예정) | **끔** |
+| frontend, fastapi | 1 / 2 | CPU 70% | 허용 |
 
 ### Dev (`moyeota-v2-dev`, dev 서브넷, ALB 없음)
 
@@ -115,9 +126,9 @@ terraform apply v2-ecs.tfplan
 
 ## 적용 후 검증 (issues/ecs-asg-by-cluster-service.md 8절)
 
-- [ ] (Stg) rest desired 1 → 2: 첫 태스크는 `rest-od`, 두 번째는 `rest-spot`에만 뜨는지. 안 되면 `rest-od {base, weight 1}` + `rest-spot {weight 4}`로 전환
-- [ ] `rest-spot` 인스턴스에 AWS FIS Spot 중단(`fis_experiment_template_ids.stg.rest_spot_interruption`) → `DRAINING` 후 대체 태스크가 다른 인스턴스에 뜨는지
-- [ ] (Stg) websocket 2태스크가 서로 다른 ws-od 호스트에 뜨고, 한 태스크에 붙은 클라이언트의 메시지가 다른 태스크의 클라이언트에 도달하는지 (Redis Pub/Sub)
+- [ ] (Stg) REST baseline 2태스크가 `general-od`에 서로 다른 호스트로 배치되고, desired를 3으로 올리면 추가 태스크가 OD:Spot weight 1:4에 따라 `shared-spot`을 우선 사용하는지
+- [ ] `shared-spot` 인스턴스에 AWS FIS Spot 중단(`fis_experiment_template_ids.stg.rest_spot_interruption`) → `DRAINING` 후 대체 태스크가 배치되는지
+- [ ] (Stg) websocket 2태스크가 서로 다른 `general-od` 호스트에 뜨고, 한 태스크에 붙은 클라이언트의 메시지가 다른 태스크의 클라이언트에 도달하는지 (Redis Pub/Sub)
 - [ ] FIS `websocket_task_stop` → 대체 태스크 RUNNING·ALB healthy까지 시간, 그 사이 publish된 메시지 유실 여부
 - [ ] FIS `container_instance_drain` → 재배치 중 Capacity Provider가 인스턴스를 늘리는지
 - [ ] (Stg 브로커) 채널 구독자 수(`PUBSUB NUMSUB moyeota:stg:chat:fanout:v1`) = websocket 태스크 수. BE 이미지에는 redis-cli가 없으므로 listener 구독 성공 로그(태스크 ID 포함)나 CloudWatch `CurrConnections`로 확인
@@ -134,7 +145,7 @@ aws cloudwatch get-metric-statistics --namespace AWS/ElastiCache --metric-name C
   --dimensions Name=CacheClusterId,Value=moyeota-v2-stg-redis-001 \
   --start-time $(date -u -v-30M +%FT%TZ) --end-time $(date -u +%FT%TZ) --period 60 --statistics Maximum
 ```
-- [ ] websocket 태스크가 `ws-od` 외 호스트에 배치되지 않는지 (`memberOf`)
+- [ ] websocket 태스크가 On-Demand `general-od` 외 Spot 호스트에 배치되지 않는지 (Capacity Provider 전략)
 - [ ] dev 인스턴스 Role로 prod 클러스터 `RegisterContainerInstance`가 `implicitDeny`인지
 - [ ] 태스크 컨테이너에서 `169.254.169.254` 호출이 막히는지 (`ECS_AWSVPC_BLOCK_IMDS`)
 - [ ] 롤링 배포 중 ASG가 min + 1까지 늘었다가 15분 뒤 돌아오는지

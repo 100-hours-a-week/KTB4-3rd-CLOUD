@@ -192,15 +192,18 @@ resource "aws_scheduler_schedule" "dev_ecs_service" {
 #   - stg_qa_schedule.start_at 시각에 각 stg 서비스 desiredCount를 locals의 desired로 복구
 #   - stg_qa_schedule.stop_at 시각에 각 stg 서비스 desiredCount를 0으로 내린다
 #   - QA 일정이 생길 때 start_at / stop_at을 설정하고 apply한다. 일정 변경·연장은 날짜를 바꿔 재적용한다.
-#   - stg ASG min과 ECS Auto Scaling min은 0이므로 서비스가 0이면 stg EC2도 0대까지 줄어든다.
+#   - stg ASG min은 0이다. 서비스 desiredCount가 0이면 Capacity Provider가 유휴 호스트를 0대까지 줄인다.
+#   - QA 중 ECS Auto Scaling min은 REST 2, WebSocket 2, frontend/FastAPI 1이다. scale-out이 발생하면 이 floor로 복구한다.
 #   - ElastiCache는 이 스케줄에 포함하지 않는다 (stg Redis 단일 노드는 상시 운영).
 #   - ECS 서비스가 이미지 설정으로 생성된 서비스만 대상이 된다.
 # =============================================================================
 
 locals {
-  stg_qa_scheduled_services = var.stg_qa_schedule.enabled && contains(keys(local.ecs_stages), "stg") ? {
-    for k, s in local.ecs_service_instances : k => s if s.stage == "stg"
-  } : {}
+  # 조건을 for 필터에 둔다. `cond ? { for ... } : {}`는 서비스 객체와 빈 객체의 타입이 달라 plan 오류가 난다.
+  stg_qa_scheduled_services = {
+    for k, s in local.ecs_service_instances : k => s
+    if var.stg_qa_schedule.enabled && contains(keys(local.ecs_stages), "stg") && s.stage == "stg"
+  }
 
   stg_qa_service_schedules = merge([
     for k, s in local.stg_qa_scheduled_services : {

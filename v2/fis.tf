@@ -4,9 +4,9 @@
 #
 #   1) websocket-task-stop      : websocket 태스크 1개 강제 종료
 #                                 → 서비스 스케줄러 재배치, ALB 재등록, 클라이언트 재연결, Pub/Sub 유실 구간 확인
-#   2) rest-spot-interruption   : rest-spot 인스턴스 1대에 Spot 중단 알림(2분)
+#   2) rest-spot-interruption   : shared Spot 인스턴스 1대에 중단 알림(2분)
 #                                 → managed draining, deregistration 30s / stopTimeout 60s 안에 대체 태스크 기동 확인
-#                                 (rest desired 2 이상이어야 rest-spot 인스턴스가 있다)
+#                                 (REST desired를 baseline 2보다 높여 Spot 태스크가 배치된 뒤 실행)
 #   3) container-instance-drain : 클러스터 컨테이너 인스턴스 50%를 10분간 DRAINING
 #                                 → distinctInstance·memberOf 제약 아래 재배치와 Capacity Provider scale-out 확인
 #
@@ -143,13 +143,13 @@ resource "aws_fis_experiment_template" "websocket_task_stop" {
 }
 
 # -----------------------------------------------------------------------------
-# 2) rest-spot 인스턴스 Spot 중단 (태그: ecs-asg Launch Template이 붙이는 Stage·Role·Purchase)
+# 2) shared Spot 인스턴스 중단 (태그: ecs-asg Launch Template이 붙이는 Stage·Role·Purchase)
 # -----------------------------------------------------------------------------
 
 resource "aws_fis_experiment_template" "rest_spot_interruption" {
   for_each = local.fis_stages
 
-  description = "${each.key}: interrupt one rest-spot instance (managed draining, task replacement)"
+  description = "${each.key}: interrupt one shared Spot instance (managed draining, task replacement)"
   role_arn    = aws_iam_role.fis[0].arn
 
   stop_condition {
@@ -157,7 +157,7 @@ resource "aws_fis_experiment_template" "rest_spot_interruption" {
   }
 
   action {
-    name      = "interrupt-rest-spot"
+    name      = "interrupt-shared-spot"
     action_id = "aws:ec2:send-spot-instance-interruptions"
 
     parameter {
@@ -167,12 +167,12 @@ resource "aws_fis_experiment_template" "rest_spot_interruption" {
 
     target {
       key   = "SpotInstances"
-      value = "rest-spot-instance"
+      value = "shared-spot-instance"
     }
   }
 
   target {
-    name           = "rest-spot-instance"
+    name           = "shared-spot-instance"
     resource_type  = "aws:ec2:spot-instance"
     selection_mode = "COUNT(1)"
 
@@ -183,7 +183,7 @@ resource "aws_fis_experiment_template" "rest_spot_interruption" {
 
     resource_tag {
       key   = "Role"
-      value = "rest"
+      value = "shared"
     }
 
     resource_tag {
