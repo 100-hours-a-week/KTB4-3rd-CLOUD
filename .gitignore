@@ -17,6 +17,14 @@ crash.*.log
 /infra/
 /loadtest-infra/
 /loadtest-scenarios/
+!/loadtest-scenarios/
+loadtest-scenarios/*
+!/loadtest-scenarios/migration/
+loadtest-scenarios/migration/*
+!/loadtest-scenarios/migration/README.md
+!/loadtest-scenarios/migration/tools/
+loadtest-scenarios/migration/tools/*
+!/loadtest-scenarios/migration/tools/build-fixture.py
 /loadtest-target/
 /perf/
 /scripts/

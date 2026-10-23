@@ -15,16 +15,16 @@ DB 컷오버 동안 V1 backend는 유지되고 DB writer만 ProxySQL 뒤에서 V
 
 ## 환경 구분
 
-- `v1-sim`은 stg에서 합성 데이터로 ProxySQL, 복제, 컷오버, 롤백을 반복 검증하는 대역 환경이다.
-- 운영 API 직접 부하는 V1 Prod backend가 ProxySQL을 사용하는 실제 컷오버 구간의 부하 확인용이다.
-- 두 환경은 서로 대체하지 않는다. `v1-sim`은 운영 API 요청을 받지 않는다.
+- DB 이관 리허설의 소스는 EC2 vCPU 한도로 별도 simulator가 아니라 V1 Prod MySQL이다. 실제 단계와 복구 절차는 [M14 실행 런북](<../v2/MIGRATION_REHEARSAL.md>)에 둔다.
+- 이 이슈의 `migration-v1-direct.js`는 해당 리허설 동안 V1 API로만 부하를 보내는 보조 발생기다. ProxySQL·복제·writer 전환을 설정하거나 실행하지 않는다.
+- API 부하는 승인된 테스트 전용 데이터와 기존에 구성된 V1 HTTPS endpoint가 준비된 경우에만 수행한다. DNS·TLS는 이 이슈와 DB 이관 Terraform의 범위가 아니다.
 
 ## 완료 기준
 
 - k6 REST·WebSocket 요청이 하나의 지정된 V1 origin만 사용한다.
 - 코드에 V2 API URL, ALB routing 또는 DNS traffic share가 없다.
 - 쓰기·채팅 부하에는 명시적인 운영 변경 확인이 필요하다.
-- 실행 파라미터, 준비할 계정·fixture, v1-sim과의 구분을 문서화한다.
+- 실행 파라미터와 준비할 계정·fixture, DB 컷오버 절차와의 역할을 문서화한다.
 
 ## 확인 항목
 
