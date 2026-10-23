@@ -106,7 +106,9 @@ V1 SG 규칙은 `infra/`의 인라인 블록 소유다. 리허설이 끝날 때�
 
 SC-4·SC-5·SC-7(R-c)는 각자 깨끗한 시작 상태가 필요하다. 반복마다 S1(재적재)부터 다시 하며, stg는 스냅샷 복원 대신 S1 재적재로 초기화한다 (스냅샷 복원은 S10에서 한 번만).
 
-권장 순서 (1회차): SC-1 → SC-2 → SC-4 → (S1 재적재) SC-1 → SC-3 → SC-5 → (S1 재적재) SC-1 → SC-3 → SC-6 → SC-7
+권장 순서 (1회차, 부하 중 컷오버 우선): SC-1 → S0 → SC-3 → SC-5 → (S1 재적재) SC-1 → SC-4 (부하 중) → (S1 재적재) SC-1 → SC-3 → SC-6 → SC-7
+
+1회차 첫 컷오버부터 k6 쓰기 부하를 건 상태로 전환한다. 실제 Prod 컷오버는 쓰기가 들어오는 중에 일어나므로, 보류 시간·lost/dup을 처음부터 그 조건에서 잰다. SC-2(무부하)는 따로 돌리지 않는다. 보류 시간 하한이 필요하면 SC-3의 `switch.log`에서 부하 전 구간 값을 읽는다. 따라서 T0 시드·fixture와 V1 HTTPS endpoint 검증(6장)이 1회차 시작 전 필수 게이트다.
 
 ### 2.3 단계 정의 (S0~S10)
 
@@ -134,7 +136,7 @@ S0은 S2 뒤에 둔다. S1·S2 실패로 중단해도 V1 backend는 한 번도 �
 | T1 인프라 연결 | Terraform apply, SSM 값, V1 부트스트랩, 계정 | `mig check` 전 항목 PASS, `repl-smoke forward·reverse` 통과 |
 | T2 적재·복제 (SC-1) | T0에서 만든 테스트 데이터까지 S1로 적재, S2, 행 수·fixture 대상 대사 | 행 수 diff 없음, 지연 0, 테스트 사용자·대상 ID가 RDS에서도 조회됨 |
 | T3 ProxySQL 삽입 | S0 | 재생성~healthy 시간 기록, 5xx 없음 |
-| T4 컷오버 (SC-2·3·4) | S3~S5, R-a | 보류 ≤ 5초 (≤ 7초 허용), writer 1개 |
+| T4 컷오버 (SC-3 우선 · SC-4) | k6 부하 중 S3~S5, R-a | 보류 ≤ 5초 (≤ 7초 허용), writer 1개, 보류 구간 5xx·timeout 없음 |
 | T5 역방향·DDL (SC-5·6) | S6, S7, R-b | 역방향 Yes·지연 0, DDL 뒤에도 복제 유지 |
 | T6 부하·전환 (SC-7) | S8, R-c, 원장 대조 | lost 0, dup 0, unknown 설명 |
 | T7 정리 | teardown, false apply, stg 복원 | V1 backend DB_HOST=mysql(또는 S10 결정), 사이드카·규칙 없음, stg 원래 데이터 |
@@ -320,9 +322,9 @@ sudo docker logs --since 5m moyeota-backend-1 2>&1 | grep -Ei 'error|exception' 
 sudo mig endpoint mysql
 ```
 
-### 4.7 T4 — 컷오버 S3~S5 (SC-2 · SC-3 · SC-4)
+### 4.7 T4 — 컷오버 S3~S5 (SC-3 우선 · SC-4)
 
-SC-2 무부하:
+1회차는 아래 SC-3(부하 중)부터 실행한다. SC-2 무부하 명령은 부하 없이 전환만 재확인할 때 쓴다:
 
 ```bash
 sudo cutover-switch switch
