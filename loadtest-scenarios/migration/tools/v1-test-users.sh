@@ -32,7 +32,13 @@ REMOTE=$(cat <<'EOF'
 set -euo pipefail
 W=$(mktemp -d); trap 'rm -rf "$W"' EXIT
 log() { echo "[$(date +%H:%M:%S)] $*"; }
-q() { docker exec -i moyeota-mysql-1 sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -N moyeota'; }
+# backend가 실제로 쓰는 스키마에 넣는다 (mig v1_db_name과 같은 방식). DB 이름을 하드코딩하면 다른 스키마를 볼 수 있다.
+DB_HOST=$(docker exec moyeota-backend-1 printenv DB_HOST || true)
+DB_NAME=$(docker exec moyeota-backend-1 printenv DB_NAME || true)
+[ "$DB_HOST" = mysql ] || { log "  FAIL  backend DB_HOST=$DB_HOST (로컬 mysql 아님)"; exit 1; }
+[[ "$DB_NAME" =~ ^[A-Za-z0-9_]+$ ]] || { log "  FAIL  backend DB_NAME 확인 불가 ($DB_NAME)"; exit 1; }
+log "  PASS  backend DB: $DB_HOST/$DB_NAME"
+q() { docker exec -i moyeota-mysql-1 sh -c "MYSQL_PWD=\"\$MYSQL_ROOT_PASSWORD\" mysql -uroot -N $DB_NAME"; }
 END_ID=$((START_ID + COUNT - 1))
 aws s3 cp "s3://$MIG_BUCKET/config/tools/make-users.py" "$W/" --only-show-errors --region "$AWS_REGION"
 log "  PASS  make-users.py 다운로드"
@@ -88,7 +94,7 @@ ok "out/v1-lt-users.json (${n}명, TTL ${TTL_HOURS}h)"
 step "F1 시드 데이터 생성 (k6 real/seed.js → https://$V1_API_HOST)"
 cd "$LT"
 k6 run --quiet -e BASE_URL="https://$V1_API_HOST" -e CONFIRM_TARGET_HOST="$V1_API_HOST" \
-  -e USERS_FILE=out/v1-lt-users.json -e FIXTURE_OUT=out/seed-fixture.json real/seed.js 2>&1 | tail -15 | sed 's/^/          /'
+  -e USERS_FILE="$OUT/v1-lt-users.json" -e FIXTURE_OUT="$OUT/seed-fixture.json" real/seed.js 2>&1 | tail -15 | sed 's/^/          /'
 [[ -s out/seed-fixture.json ]] || die "seed-fixture.json 없음"
 ok "out/seed-fixture.json"
 
