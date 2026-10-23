@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # [PC] v1.moyeota.com 인증서를 Route53 DNS-01로 발급하고 이관 버킷 config/tls/에 올린다.
 # V1 서버는 건드리지 않는다. 설치는 [V1]에서 v1-cert-install.sh로 한다.
-# SAN에 moyeota.com도 넣어, V1에 아직 moyeota.com SNI로 들어오는 요청이 깨지지 않게 한다.
+# moyeota.com은 V2 Prod ALB(ACM), stg.moyeota.com은 stg ALB(ACM)가 따로 맡으므로 V1 인증서에는 넣지 않는다.
 set -euo pipefail
 
 export AWS_PROFILE="${AWS_PROFILE:-moyeota-terraform}" AWS_REGION="${AWS_REGION:-ap-northeast-2}"
 OUT="${OUT:-$HOME/.moyeota-v1-cert}"
 IMAGE=certbot/dns-route53:v3.0.1
-DOMAINS=(-d v1.moyeota.com -d moyeota.com)
+DOMAINS=(-d v1.moyeota.com)
 BUCKET="moyeota-migration-$(aws sts get-caller-identity --query Account --output text)"
 
 ts() { date '+%H:%M:%S'; }
