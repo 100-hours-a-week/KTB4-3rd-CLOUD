@@ -25,6 +25,9 @@ loadtest-scenarios/migration/*
 !/loadtest-scenarios/migration/tools/
 loadtest-scenarios/migration/tools/*
 !/loadtest-scenarios/migration/tools/build-fixture.py
+!/loadtest-scenarios/migration/tools/precheck.sh
+!/loadtest-scenarios/migration/tools/v1-cert-issue.sh
+!/loadtest-scenarios/migration/tools/v1-cert-install.sh
 /loadtest-target/
 /perf/
 /scripts/
