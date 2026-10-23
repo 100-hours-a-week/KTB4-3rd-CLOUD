@@ -41,12 +41,12 @@ S=$(docker exec moyeota-backend-1 printenv JWT_SECRET)
 log "  PASS  JWT_SECRET 읽음 (출력하지 않음)"
 existing=$(echo "SELECT COUNT(*) FROM users WHERE id BETWEEN $START_ID AND $END_ID" | q)
 log "  INFO  id $START_ID..$END_ID 기존 행: $existing"
+# 토큰·seed-users.sql·cleanup.sql을 항상 만든다. INSERT는 사용자가 없을 때만 한다.
+JWT_SECRET="$S" python3 "$W/make-users.py" --count "$COUNT" --start-id "$START_ID" --ttl-hours "$TTL_HOURS" --out-dir "$W" >/dev/null
 if [ "$existing" -eq 0 ]; then
-  JWT_SECRET="$S" python3 "$W/make-users.py" --count "$COUNT" --start-id "$START_ID" --ttl-hours "$TTL_HOURS" --out-dir "$W" >/dev/null
   q < "$W/seed-users.sql"
   log "  PASS  테스트 사용자 $COUNT명 INSERT"
 elif [ "$existing" -eq "$COUNT" ]; then
-  JWT_SECRET="$S" python3 "$W/make-users.py" --count "$COUNT" --start-id "$START_ID" --ttl-hours "$TTL_HOURS" --out-dir "$W" --tokens-only >/dev/null
   log "  PASS  이미 있음 → 토큰만 재발급"
 else
   log "  FAIL  id 범위에 일부만 존재 ($existing/$COUNT). 정리 후 다시 실행"; exit 1
@@ -56,7 +56,7 @@ cnt=$(echo "SELECT COUNT(*) FROM users WHERE id BETWEEN $START_ID AND $END_ID" |
 [ "$cnt" -eq "$COUNT" ] || { log "  FAIL  사용자 수 $cnt/$COUNT"; exit 1; }
 log "  PASS  V1 users 테이블 확인 $cnt명"
 echo BEGIN_USERS; gzip -c "$W/users.json" | base64 -w0; echo; echo END_USERS
-[ -f "$W/cleanup.sql" ] && { echo BEGIN_CLEANUP; gzip -c "$W/cleanup.sql" | base64 -w0; echo; echo END_CLEANUP; }
+echo BEGIN_CLEANUP; gzip -c "$W/cleanup.sql" | base64 -w0; echo; echo END_CLEANUP
 EOF
 )
 
@@ -80,7 +80,7 @@ grep -E '^\[' <<<"$stdout" | sed 's/^/          /'
 step "U3 토큰 파일 저장"
 umask 077
 awk '/^BEGIN_USERS$/{f=1;next}/^END_USERS$/{f=0}f' <<<"$stdout" | base64 -d | gunzip > "$OUT/v1-lt-users.json"
-awk '/^BEGIN_CLEANUP$/{f=1;next}/^END_CLEANUP$/{f=0}f' <<<"$stdout" | base64 -d 2>/dev/null | gunzip > "$OUT/v1-lt-cleanup.sql" 2>/dev/null || true
+awk '/^BEGIN_CLEANUP$/{f=1;next}/^END_CLEANUP$/{f=0}f' <<<"$stdout" | base64 -d | gunzip > "$OUT/v1-lt-cleanup.sql"
 n=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(len(d["users"]) if isinstance(d,dict) else len(d))' "$OUT/v1-lt-users.json")
 [[ "$n" -eq "$COUNT" ]] || die "토큰 $n/$COUNT개"
 ok "out/v1-lt-users.json (${n}명, TTL ${TTL_HOURS}h)"
