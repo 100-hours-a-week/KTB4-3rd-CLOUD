@@ -143,7 +143,7 @@ locals {
 #   근거: issues/ECS-Task·Container-spec.md 2절 (부하 테스트 전 "시작값")
 #   - REST      : 1 vCPU / 1 GiB, 컨테이너 hard limit 960 MiB, -Xmx512m, 앱 8080 · 관리 8090
 #   - WebSocket : 0.5 vCPU / 1 GiB, 컨테이너 hard limit 960 MiB, heap 최대 512 MiB (잠정)
-#   - frontend · fastapi : 측정값 없음 → general-od(t3.small) 호스트당 2태스크가 들어가는 잠정값
+#   - frontend · fastapi : 측정값 없음 → general-od(t3.medium) 호스트당 2태스크가 들어가는 잠정값
 #   route_order : ALB Listener Rule 우선순위 오프셋 (/api/wss 가 /api/* 보다 먼저)
 #   APP_ROLE    : 같은 BE 이미지를 rest·websocket 두 서비스로 띄우므로 실행 역할을 알린다.
 #                 BE가 이 값으로 REST 컨트롤러·STOMP endpoint·Redis listener를 조건부 등록해야 실제 자원이 분리된다
@@ -237,6 +237,12 @@ locals {
       memory_mib_min = 2048
       memory_mib_max = 8192
     }
+    shared = {
+      vcpu_min       = 2
+      vcpu_max       = 4
+      memory_mib_min = 4096
+      memory_mib_max = 8192
+    }
     dev_shared = {
       vcpu_min       = 2
       vcpu_max       = 4
@@ -292,9 +298,11 @@ locals {
 #   asg_groups : 키 = <role>-<purchase>, ASG 이름 = <project>-<stage>-<key>
 #   services   : strategy[].asg는 같은 스테이지 asg_groups 키
 #
-#   prod : rest-od 2–3 / rest-spot 0–4 / ws-od 3–4 / general-od 1–2   (app 서브넷, 단일 AZ)
-#   stg  : prod와 같은 4개 구조, 대수만 축소 (ws-od 1–3, websocket 2태스크) (dev 서브넷 — stg 서브넷은 미결)
+#   prod : 공용 t3.medium On-Demand baseline 3대 + 공용 Spot burst (app 서브넷, 단일 AZ)
+#   stg  : QA 시간에 공용 t3.medium On-Demand baseline 최대 4대 + 공용 Spot burst (dev 서브넷)
 #   dev  : shared-spot 0–2 하나를 모든 서비스가 binpack으로 공유       (dev 서브넷, Non-Prod ALB)
+#
+#   stg·prod는 2026-10-23 역할별 ASG(rest-od / rest-spot / ws-od)에서 공용 풀로 전환했다 (EC2 On-Demand vCPU 한도 32).
 # -----------------------------------------------------------------------------
 locals {
   ecs_stage_settings = {
@@ -342,59 +350,43 @@ locals {
       default_asg             = "general-od"
 
       asg_groups = {
-        rest-od = {
-          role                  = "rest"
+        # QA 중 필수 태스크가 올라오면 Capacity Provider가 필요한 호스트를 띄운다.
+        # ASG min=0은 QA 종료 후 호스트를 0대로 줄이기 위한 값이며, 서비스 baseline은 CP strategy의 base로 보장한다.
+        # max 4: 기본 6태스크가 3대(6자리)를 꽉 채워 distinctInstance 배치·롤링 배포가 막히므로 1대 여유를 둔다.
+        general-od = {
+          role                  = "shared"
           purchase              = "od"
-          instance_types        = ["t3.small"]
+          instance_types        = ["t3.medium"]
           instance_requirements = null
-          min                   = 1
-          max                   = 2
+          min                   = 0
+          max                   = 4
         }
-        rest-spot = {
-          role                  = "rest"
+        # REST·Next·FastAPI의 baseline을 넘는 태스크만 받는 공용 Spot burst 풀.
+        shared-spot = {
+          role                  = "shared"
           purchase              = "spot"
           instance_types        = []
-          instance_requirements = local.ecs_spot_requirements.rest
+          instance_requirements = local.ecs_spot_requirements.shared
           min                   = 0
-          max                   = 2
-        }
-        # websocket 2태스크(distinctInstance) + 롤링 배포 1대 → max 3
-        #   max 2이면 기존 2태스크가 호스트 2대를 차지해 새 태스크를 놓을 곳이 없어 배포가 멈춘다 (min 100 / max 200)
-        ws-od = {
-          role                  = "ws"
-          purchase              = "od"
-          instance_types        = ["t3.small"]
-          instance_requirements = null
-          min                   = 1
-          max                   = 3
-        }
-        # 문서값은 1/1이지만 frontend+fastapi 2태스크로 호스트 ENI가 차서 롤링 배포(+1 태스크)가 막힌다 → max 2
-        general-od = {
-          role                  = "general"
-          purchase              = "od"
-          instance_types        = ["t3.small"]
-          instance_requirements = null
-          min                   = 1
           max                   = 2
         }
       }
 
       services = {
-        # weight 0 검증용: desired 1 → 2로 올렸을 때 두 번째 태스크가 rest-spot에만 뜨는지 확인한다
         rest = {
           strategy = [
-            { asg = "rest-od", base = 1, weight = 0 },
-            { asg = "rest-spot", base = 0, weight = 1 },
+            { asg = "general-od", base = 2, weight = 1 },
+            { asg = "shared-spot", base = 0, weight = 4 },
           ]
-          placement_role       = "rest"
+          placement_role       = "shared"
           distinct_instance    = true
           placement_strategies = []
-          desired              = 1
+          desired              = 2
           deploy_min           = 100
           deploy_max           = 200
           autoscaling = {
-            min_capacity = 1
-            max_capacity = 3
+            min_capacity = 2
+            max_capacity = 4
             cpu_target   = 60
             scheduled    = []
           }
@@ -402,8 +394,8 @@ locals {
         # Redis Pub/Sub 크로스 태스크 검증: 최소 2태스크를 서로 다른 호스트에 둔다.
         # prod와 같은 정책(scale-in 금지)을 stg에서 먼저 확인한다.
         websocket = {
-          strategy             = [{ asg = "ws-od", base = 1, weight = 1 }]
-          placement_role       = "ws"
+          strategy             = [{ asg = "general-od", base = 0, weight = 1 }]
+          placement_role       = "shared"
           distinct_instance    = true
           placement_strategies = []
           desired              = 2
@@ -418,24 +410,40 @@ locals {
           }
         }
         frontend = {
-          strategy             = [{ asg = "general-od", base = 1, weight = 1 }]
-          placement_role       = "general"
+          strategy = [
+            { asg = "general-od", base = 1, weight = 1 },
+            { asg = "shared-spot", base = 0, weight = 4 },
+          ]
+          placement_role       = "shared"
           distinct_instance    = false
           placement_strategies = [{ type = "binpack", field = "memory" }]
           desired              = 1
           deploy_min           = 100
           deploy_max           = 200
-          autoscaling          = null
+          autoscaling = {
+            min_capacity = 1
+            max_capacity = 2
+            cpu_target   = 70
+            scheduled    = []
+          }
         }
         fastapi = {
-          strategy             = [{ asg = "general-od", base = 1, weight = 1 }]
-          placement_role       = "general"
+          strategy = [
+            { asg = "general-od", base = 1, weight = 1 },
+            { asg = "shared-spot", base = 0, weight = 4 },
+          ]
+          placement_role       = "shared"
           distinct_instance    = false
           placement_strategies = [{ type = "binpack", field = "memory" }]
           desired              = 1
           deploy_min           = 100
           deploy_max           = 200
-          autoscaling          = null
+          autoscaling = {
+            min_capacity = 1
+            max_capacity = 2
+            cpu_target   = 70
+            scheduled    = []
+          }
         }
       }
     }
@@ -449,53 +457,35 @@ locals {
       default_asg             = "general-od"
 
       asg_groups = {
-        # 기준 용량. +1대는 롤링 배포 시 새 태스크 자리
-        rest-od = {
-          role                  = "rest"
+        # 공용 On-Demand baseline. REST/WebSocket의 distinct 태스크와 앱 baseline을 함께 수용한다.
+        # 3대 baseline, 4대 max (min + 1, [D17])로 Spot 부족·배포·서비스 scale-out 시 On-Demand 여유를 둔다.
+        general-od = {
+          role                  = "shared"
           purchase              = "od"
-          instance_types        = ["t3.small"]
-          instance_requirements = null
-          min                   = 2
-          max                   = 3
-        }
-        # 출퇴근·이벤트 추가분만. SLO 기준 용량에 넣지 않는다
-        rest-spot = {
-          role                  = "rest"
-          purchase              = "spot"
-          instance_types        = []
-          instance_requirements = local.ecs_spot_requirements.rest
-          min                   = 0
-          max                   = 4
-        }
-        # 1,800 연결 / 3대 잠정안, +1대는 배포·장애 대체용
-        ws-od = {
-          role                  = "ws"
-          purchase              = "od"
-          instance_types        = ["t3.small"]
+          instance_types        = ["t3.medium"]
           instance_requirements = null
           min                   = 3
           max                   = 4
         }
-        # frontend + fastapi (호스트당 2태스크)
-        general-od = {
-          role                  = "general"
-          purchase              = "od"
-          instance_types        = ["t3.small"]
-          instance_requirements = null
-          min                   = 1
-          max                   = 2
+        # REST·frontend·FastAPI의 추가 용량. WebSocket은 연결 중단 위험 때문에 On-Demand만 사용한다.
+        shared-spot = {
+          role                  = "shared"
+          purchase              = "spot"
+          instance_types        = []
+          instance_requirements = local.ecs_spot_requirements.shared
+          min                   = 0
+          max                   = 4
         }
       }
 
       services = {
-        # 기준 2개는 항상 On-Demand, 3번째부터 Spot.
-        # Stg 검증에서 base 태스크가 뜨지 않으면 rest-od {base 2, weight 1} + rest-spot {weight 4}로 바꾸고 rest-od max를 4로 올린다.
+        # On-Demand baseline 2태스크. baseline 초과 REST는 공용 Spot과 On-Demand에 분산한다.
         rest = {
           strategy = [
-            { asg = "rest-od", base = 2, weight = 0 },
-            { asg = "rest-spot", base = 0, weight = 1 },
+            { asg = "general-od", base = 2, weight = 1 },
+            { asg = "shared-spot", base = 0, weight = 4 },
           ]
-          placement_role       = "rest"
+          placement_role       = "shared"
           distinct_instance    = true
           placement_strategies = []
           desired              = 2
@@ -511,15 +501,15 @@ locals {
         # Spot 미사용. 자동 scale-in 금지 (연결 단절 방지)
         # 동적 지표는 태스크당 STOMP 세션 수(커스텀 지표)가 목표 — 앱이 지표를 발행하기 전까지 CPU로 scale-out만 한다
         websocket = {
-          strategy             = [{ asg = "ws-od", base = 3, weight = 1 }]
-          placement_role       = "ws"
+          strategy             = [{ asg = "general-od", base = 0, weight = 1 }]
+          placement_role       = "shared"
           distinct_instance    = true
           placement_strategies = []
-          desired              = 3
+          desired              = 2
           deploy_min           = 100
           deploy_max           = 200
           autoscaling = {
-            min_capacity     = 3
+            min_capacity     = 2
             max_capacity     = 4
             cpu_target       = 60
             disable_scale_in = true
@@ -527,8 +517,11 @@ locals {
           }
         }
         frontend = {
-          strategy             = [{ asg = "general-od", base = 1, weight = 1 }]
-          placement_role       = "general"
+          strategy = [
+            { asg = "general-od", base = 1, weight = 1 },
+            { asg = "shared-spot", base = 0, weight = 4 },
+          ]
+          placement_role       = "shared"
           distinct_instance    = false
           placement_strategies = [{ type = "binpack", field = "memory" }]
           desired              = 1
@@ -542,8 +535,11 @@ locals {
           }
         }
         fastapi = {
-          strategy             = [{ asg = "general-od", base = 1, weight = 1 }]
-          placement_role       = "general"
+          strategy = [
+            { asg = "general-od", base = 1, weight = 1 },
+            { asg = "shared-spot", base = 0, weight = 4 },
+          ]
+          placement_role       = "shared"
           distinct_instance    = false
           placement_strategies = [{ type = "binpack", field = "memory" }]
           desired              = 1
