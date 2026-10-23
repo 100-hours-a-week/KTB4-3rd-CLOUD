@@ -3,7 +3,7 @@
 # nginx 컨테이너를 재생성·재시작하지 않는다(nginx -s reload). nginx -t 실패 시 백업으로 되돌린다.
 set -euo pipefail
 
-BUCKET="${MIG_BUCKET:?MIG_BUCKET 필요 (moyeota-migration-<account-id>)}"
+BUCKET="${MIG_BUCKET:?MIG_BUCKET 필요 (moyeota-v2-migration-<account-id>)}"
 NGINX="${NGINX_CONTAINER:-moyeota-nginx-1}"
 HOST=v1.moyeota.com
 WORK="$(mktemp -d)"

@@ -248,7 +248,7 @@ df -h / /var/tmp
 ```
 
 ```bash
-MIG_BUCKET=moyeota-migration-<account-id>
+MIG_BUCKET=moyeota-v2-migration-<account-id>
 sudo install -d -m 0700 /etc/moyeota-migration
 printf 'MIG_BUCKET=%s\nAWS_REGION=ap-northeast-2\n' "$MIG_BUCKET" | sudo tee /etc/moyeota-migration/bootstrap.env
 sudo aws s3 cp "s3://$MIG_BUCKET/config/bin/mig" /usr/local/bin/mig --region ap-northeast-2

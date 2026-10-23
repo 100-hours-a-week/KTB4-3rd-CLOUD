@@ -8,7 +8,9 @@ export AWS_PROFILE="${AWS_PROFILE:-moyeota-terraform}" AWS_REGION="${AWS_REGION:
 OUT="${OUT:-$HOME/.moyeota-v1-cert}"
 IMAGE=certbot/dns-route53:v3.0.1
 DOMAINS=(-d v1.moyeota.com)
-BUCKET="moyeota-migration-$(aws sts get-caller-identity --query Account --output text)"
+# v2/migration.tf: "${var.project_name}-migration-<account-id>", project_name = moyeota-v2
+BUCKET="${MIG_BUCKET:-moyeota-v2-migration-$(aws sts get-caller-identity --query Account --output text)}"
+aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null || { echo "이관 버킷 없음: $BUCKET (MIG_BUCKET으로 지정)"; exit 1; }
 
 ts() { date '+%H:%M:%S'; }
 step() { printf '\n[%s] ▶ %s\n' "$(ts)" "$1"; }
