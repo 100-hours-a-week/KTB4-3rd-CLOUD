@@ -265,7 +265,9 @@ sudo mig status
 
 ### 4.4.1 T0 — [PC] 테스트 전용 시드 데이터 · fixture
 
-T2의 S1 초기 적재 전에 한 번 실행한다. V1 DB에 이미 준비된 테스트 전용 사용자와 그 사용자에게 유효한 토큰 파일을 사용한다. 일반 사용자 데이터나 운영 JWT secret으로 토큰을 만들지 않는다. 토큰이 V1과 S1 이후 Stg 양쪽에서 유효하지 않으면 API 부하 단계는 보류한다.
+T2의 S1 초기 적재 전에 한 번 실행한다. V1 DB에 이미 준비된 테스트 전용 사용자와 그 사용자에게 유효한 토큰 파일을 사용한다. 일반 사용자 데이터나 운영 JWT secret으로 토큰을 만들지 않는다.
+
+> 1회차 예외 (2026-10-24 결정): V1 Prod에 유효한 테스트 토큰이 없어(로그인은 Kakao OAuth뿐), V1 Prod `JWT_SECRET`으로 테스트 전용 사용자(id 900001~900100) 토큰만 TTL 6시간으로 발급한다. `loadtest-scenarios/migration/tools/v1-test-users.sh`가 V1 안에서 서명해 토큰만 받아 오므로 secret은 V1 밖으로 나오지 않는다. 사용자 INSERT부터 seed·fixture까지 한 번에 하며, 정리는 `out/v1-lt-cleanup.sql`(id 범위 삭제)을 V1 MySQL에서 실행한다. 토큰이 V1과 S1 이후 Stg 양쪽에서 유효하지 않으면 API 부하 단계는 보류한다.
 
 ```bash
 cd loadtest-scenarios
