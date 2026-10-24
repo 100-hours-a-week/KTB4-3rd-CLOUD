@@ -221,7 +221,8 @@ cmd_render() {
   [ "${1:-}" = "--reset-proxysql" ] && reset=true
 
   install -d -m 0750 "$BASE" "$CONF" "$BASE/proxysql" "$STATE"
-  aws s3 sync "s3://$MIG_BUCKET/config/" "$CONF/" --delete --only-show-errors --region "$AWS_REGION"
+  # --exact-timestamps: 기본값은 같은 크기면 S3 쪽이 새것이어도 건너뛴다 (bin/mig 같은 크기 수정이 반영되지 않았다)
+  aws s3 sync "s3://$MIG_BUCKET/config/" "$CONF/" --delete --exact-timestamps --only-show-errors --region "$AWS_REGION"
   install -m 0755 "$CONF/bin/mig" /usr/local/bin/mig
   install -m 0755 "$CONF/bin/cutover-switch" /usr/local/bin/cutover-switch
 
