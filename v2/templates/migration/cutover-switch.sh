@@ -93,15 +93,6 @@ conn_used() {
   adm -e "SELECT IFNULL(SUM(ConnUsed),0) FROM stats_mysql_connection_pool WHERE hostgroup=10 AND srv_host='$1'"
 }
 
-# V1에서 진행 중인 일: ProxySQL 경유 실행 중 쿼리 + InnoDB 열린 트랜잭션.
-# ConnUsed는 쓰지 않는다 — Connector/J 세션 문장으로 멀티플렉싱이 꺼진 백엔드 연결은 쉬고 있어도 ConnUsed로 남는다.
-v1_active() {
-  local q t
-  q="$(adm -e "SELECT COUNT(*) FROM stats_mysql_processlist WHERE hostgroup=10 AND srv_host='$V1C' AND command <> 'Sleep'")"
-  t="$(v1 -e "SELECT COUNT(*) FROM information_schema.innodb_trx")"
-  echo $(( q + t ))
-}
-
 show_hg() {
   adm -t -e "SELECT hostgroup_id hg, hostname, status, use_ssl FROM runtime_mysql_servers ORDER BY hostname;
 SELECT srv_host, status, ConnUsed, ConnFree, ConnOK, ConnERR, Queries FROM stats_mysql_connection_pool WHERE hostgroup=10;"
@@ -184,13 +175,11 @@ cmd_switch() {
 
   stamp "S3 보류 시작: V1 → OFFLINE_SOFT"
   set_servers OFFLINE_SOFT OFFLINE_HARD
-  until [ "$(v1_active)" = 0 ]; do
-    over && { stamp "진행 중 쿼리·트랜잭션이 ${HOLD_LIMIT}s 안에 끝나지 않음 (고정 연결 $(conn_used "$V1C")개)"; abort_ra; exit 1; }
+  until [ "$(conn_used "$V1C")" = 0 ]; do
+    over && { stamp "진행 중 연결이 ${HOLD_LIMIT}s 안에 끝나지 않음"; abort_ra; exit 1; }
     sleep 0.1
   done
-  # 쉬는 고정 연결은 OFFLINE_HARD로 끊는다. 이후 쿼리는 ONLINE 서버가 생길 때까지 ProxySQL에서 대기한다 (connect_timeout_server_max).
-  stamp "S4 진행 중 쿼리·트랜잭션 없음 (고정 연결 $(conn_used "$V1C")개) → V1 OFFLINE_HARD · super_read_only ON"
-  set_servers OFFLINE_HARD OFFLINE_HARD
+  stamp "S4 연결 소진 → V1 super_read_only ON"
   v1 -e "SET GLOBAL super_read_only = ON"
   read -r file pos _ < <(v1 -e "SHOW BINARY LOG STATUS")
   until rfile="$(replica_field rds Relay_Source_Log_File)"; rpos="$(replica_field rds Exec_Source_Log_Pos)"; [ "$rfile" = "$file" ] && [ "$rpos" = "$pos" ]; do

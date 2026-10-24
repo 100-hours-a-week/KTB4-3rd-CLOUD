@@ -125,7 +125,7 @@ SC-4·SC-5·SC-7(R-c)는 각자 깨끗한 시작 상태가 필요하다. 반복�
 | S2 | RDS가 relay(3307)로 V1 binlog 복제 시작 | `cutover-switch s2-forward` | IO/SQL Yes, 지연 0 |
 | S0 | V1 backend를 proxysql:6033 + stg 앱 계정으로 재생성 | `mig endpoint proxysql` | healthy, 5xx 없음 |
 | S3 | ProxySQL V1 → OFFLINE_SOFT (신규 쓰기 보류) | `cutover-switch switch` | — |
-| S4 | V1 진행 중 쿼리·열린 트랜잭션 0 → V1 OFFLINE_HARD(쉬는 고정 연결 끊기) → super_read_only ON → 좌표 일치 | 〃 | V1 binlog 좌표 = RDS 적용 좌표 |
+| S4 | 진행 연결 소진 → V1 super_read_only ON → 좌표 일치 | 〃 | V1 binlog 좌표 = RDS 적용 좌표 |
 | S5 | 정방향 해제, RDS ONLINE / V1 OFFLINE_HARD | 〃 | 보류 ≤ 7초 |
 | S6 | RDS → V1 역방향 복제 (`REPLICATE_DO_DB`) | `cutover-switch s6-reverse` | IO/SQL Yes |
 | S7 | 승인된 V2 DDL을 RDS에 수동 적용 → 스키마 대사 → stg ECS 기동 (Flyway 미실행) | `mig sql rds`, `mig schema-diff s7` | MDL 대기 없음, 차이 = V2 DDL, stg healthy |
