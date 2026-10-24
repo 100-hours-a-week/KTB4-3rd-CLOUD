@@ -33,6 +33,15 @@ def main():
     if not users or len(ids) != len(users) or any(not u.get("token") for u in users):
         p.error("users JSON must contain unique user IDs and non-empty tokens")
 
+    # real/seed.js records room members as positions in users.json; cutover.js looks tokens up by user ID.
+    def member_id(value):
+        v = int(value)
+        if v in ids:
+            return v
+        if 0 <= v < len(users):
+            return int(users[v]["id"])
+        p.error("room member IDs must exist in the supplied users.json")
+
     rooms = seed.get("rooms", [])
     companions = seed.get("companions", [])
     posts = seed.get("community_posts", [])
@@ -41,8 +50,7 @@ def main():
     for room in rooms:
         if not room.get("room_id") or not room.get("companion_id") or not room.get("members"):
             p.error("each seeded room must have room_id, companion_id, and members")
-        if any(int(uid) not in ids for uid in room["members"]):
-            p.error("room member IDs must exist in the supplied users.json")
+        room["members"] = [member_id(m) for m in room["members"]]
 
     busy = {int(uid) for room in rooms for uid in room["members"]}
     active_ids = sorted(ids)
