@@ -16,9 +16,6 @@
 | V1 호스트 배치 | 기존 Compose 프로젝트(`moyeota`)와 분리된 별도 프로젝트 `moyeota-migration` — proxysql · relay · migcli 3개만 |
 | VPC 연결 | 추가 없음. V2는 V1 VPC(`vpc-054f8f601f1b9f1b3`)를 공유하므로 SG 규칙만 더한다 |
 | 데이터 | V1 Prod 실데이터를 stg RDS로 적재. 시작 전 stg 스냅샷, 종료 후 스냅샷에서 복원. V1 Prod DB는 복원하지 않는다 |
-| 1회차 범위 (2026-10-24) | **역방향 복제(S6)를 하지 않는다.** 정방향 적재·복제와 컷오버(SC-1·SC-3·SC-4), S7 수동 DDL·stg 기동까지. 역방향이 필요한 SC-5·SC-6·SC-7(R-c)은 2회차 이후 |
-| V2 스키마 반영 (S7) | 승인된 V2 DDL을 RDS에 **수동 SQL**로 적용한다. stg 앱은 Flyway를 실행하지 않는다. 역방향 복제가 없으므로 DDL은 V1 Prod로 넘어가지 않는다 |
-| 스키마 대사 | `mig schema-diff`: S1 뒤 V1 = RDS, S7 뒤 차이 = 승인된 V2 DDL |
 
 ## 1. 네트워크 방식 선택 — V1 internal MySQL을 RDS와 연결
 
@@ -91,7 +88,7 @@ V1 SG 규칙은 `infra/`의 인라인 블록 소유다. 리허설이 끝날 때�
 | 원장 dup (같은 키 2건 이상) | 0 |
 | unknown 응답 | 원장·DB 대조로 전부 설명 |
 | 정방향/역방향 복제 | IO·SQL thread Yes, Last error 없음, 지연 0으로 수렴 |
-| 행 수·스키마 대사 | S1 뒤 행 수 일치, `mig schema-diff s1` SCHEMA_MATCH / S7 뒤 `mig schema-diff s7`의 차이가 승인된 V2 DDL 항목과 정확히 같음 |
+| 행 수·스키마 대사 (S1 뒤, S10 전) | V1과 RDS 일치 (V2 DDL로 추가된 컬럼·테이블은 차이 목록으로 설명) |
 | ProxySQL writer | 어느 시점에도 ONLINE writer 1개 |
 | V1 EC2 | CPU credit 소진 추세 없음, MySQL 연결 포화 없음 |
 
@@ -109,11 +106,7 @@ V1 SG 규칙은 `infra/`의 인라인 블록 소유다. 리허설이 끝날 때�
 
 SC-4·SC-5·SC-7(R-c)는 각자 깨끗한 시작 상태가 필요하다. 반복마다 S1(재적재)부터 다시 하며, stg는 스냅샷 복원 대신 S1 재적재로 초기화한다 (스냅샷 복원은 S10에서 한 번만).
 
-1회차 순서 (역방향 없음, 2026-10-24): SC-1 → S0 → SC-4 (부하 중) → SC-3 (부하 중) → S7 (수동 DDL · stg 기동) → 되돌림(`cutover-switch revert`, T7)
-
-- SC-4는 S5 전에 끊기므로 정방향 복제가 대부분 남는다. `lag`로 확인해 정방향이 살아 있으면 S1 재적재 없이 SC-3으로 간다. 해제됐다면(S4 위치 일치 뒤 예산 초과) S1부터 다시 한다.
-- 역방향이 없어서 S5 뒤에는 V1으로 데이터를 돌려보낼 수 없다. 컷오버를 한 회차에 한 번만 하도록 SC-3을 마지막 전환으로 둔다. `revert`는 S5 이후 RDS가 받은 쓰기를 버리고 V1을 다시 writer로 만든다 (버린 binlog 구간을 `switch.log`에 기록).
-- 2회차 이후 순서(역방향 포함): SC-1 → S0 → SC-3 → SC-5 → (S1 재적재) SC-1 → SC-4 (부하 중) → (S1 재적재) SC-1 → SC-3 → SC-6 → SC-7
+권장 순서 (1회차, 부하 중 컷오버 우선): SC-1 → S0 → SC-3 → SC-5 → (S1 재적재) SC-1 → SC-4 (부하 중) → (S1 재적재) SC-1 → SC-3 → SC-6 → SC-7
 
 1회차 첫 컷오버부터 k6 쓰기 부하를 건 상태로 전환한다. 실제 Prod 컷오버는 쓰기가 들어오는 중에 일어나므로, 보류 시간·lost/dup을 처음부터 그 조건에서 잰다. SC-2(무부하)는 따로 돌리지 않는다. 보류 시간 하한이 필요하면 SC-3의 `switch.log`에서 부하 전 구간 값을 읽는다. 따라서 T0 시드·fixture와 V1 HTTPS endpoint 검증(6장)이 1회차 시작 전 필수 게이트다.
 
@@ -125,14 +118,13 @@ SC-4·SC-5·SC-7(R-c)는 각자 깨끗한 시작 상태가 필요하다. 반복�
 | S2 | RDS가 relay(3307)로 V1 binlog 복제 시작 | `cutover-switch s2-forward` | IO/SQL Yes, 지연 0 |
 | S0 | V1 backend를 proxysql:6033 + stg 앱 계정으로 재생성 | `mig endpoint proxysql` | healthy, 5xx 없음 |
 | S3 | ProxySQL V1 → OFFLINE_SOFT (신규 쓰기 보류) | `cutover-switch switch` | — |
-| S4 | V1 진행 중 쿼리·열린 트랜잭션 0 → V1 OFFLINE_HARD(쉬는 고정 연결 끊기) → super_read_only ON → 좌표 일치 | 〃 | V1 binlog 좌표 = RDS 적용 좌표 |
+| S4 | 진행 연결 소진 → V1 super_read_only ON → 좌표 일치 | 〃 | V1 binlog 좌표 = RDS 적용 좌표 |
 | S5 | 정방향 해제, RDS ONLINE / V1 OFFLINE_HARD | 〃 | 보류 ≤ 7초 |
 | S6 | RDS → V1 역방향 복제 (`REPLICATE_DO_DB`) | `cutover-switch s6-reverse` | IO/SQL Yes |
-| S7 | 승인된 V2 DDL을 RDS에 수동 적용 → 스키마 대사 → stg ECS 기동 (Flyway 미실행) | `mig sql rds`, `mig schema-diff s7` | MDL 대기 없음, 차이 = V2 DDL, stg healthy |
+| S7 | 승인된 V2 DDL을 RDS에 적용 → stg ECS 기동 | `mig sql rds` | MDL 대기·복제 오류 없음 |
 | S8 | k6 URL 비율 V1 → stg 전환 (DNS 변경 아님) | k6 `ROUTE=schedule` | 원장 lost/dup 0 |
 | S9 | R-b / R-c | `cutover-switch rollback-b`, k6 reverse | 역방향 지연 0 수렴 |
 | S10 | 정리 · stg 스냅샷 복원 | `mig teardown`, `terraform apply`, RDS restore | stg 원래 데이터 확인 |
-| RV | 역방향 없이 V1으로 되돌림 (1회차, S5 뒤) | `cutover-switch revert` | ONLINE writer = V1 하나, 버린 RDS 구간 기록 |
 
 S0은 S2 뒤에 둔다. S1·S2 실패로 중단해도 V1 backend는 한 번도 재생성되지 않는다.
 
@@ -141,14 +133,13 @@ S0은 S2 뒤에 둔다. S1·S2 실패로 중단해도 V1 backend는 한 번도 �
 | 단계 | 하는 일 | 게이트 (하나라도 실패하면 다음 단계로 가지 않음) |
 |---|---|---|
 | T0 사전 확인·시드 | V1 binlog·자원 확인, 테스트 전용 사용자/시드 데이터 준비, Stg 스냅샷·RDS binlog 확인 | V1 `log_bin=1`, `binlog_format=ROW`, GTID OFF / 전용 테스트 데이터만 생성 / fixture 대상 조회 성공 / 스냅샷 available / RDS 백업 보존 ≥ 1일 |
-| T1 인프라 연결 | Terraform apply, SSM 값, V1 부트스트랩, 계정 | `mig check` 전 항목 PASS, `repl-smoke forward` 통과 (`reverse`는 2회차부터) |
-| T2 적재·복제 (SC-1) | T0에서 만든 테스트 데이터까지 S1로 적재, 스키마 대사, S2, 행 수·fixture 대상 대사 | `mig schema-diff s1` SCHEMA_MATCH, 행 수 diff 없음, 지연 0, 테스트 사용자·대상 ID가 RDS에서도 조회됨 |
+| T1 인프라 연결 | Terraform apply, SSM 값, V1 부트스트랩, 계정 | `mig check` 전 항목 PASS, `repl-smoke forward·reverse` 통과 |
+| T2 적재·복제 (SC-1) | T0에서 만든 테스트 데이터까지 S1로 적재, S2, 행 수·fixture 대상 대사 | 행 수 diff 없음, 지연 0, 테스트 사용자·대상 ID가 RDS에서도 조회됨 |
 | T3 ProxySQL 삽입 | S0 | 재생성~healthy 시간 기록, 5xx 없음 |
 | T4 컷오버 (SC-3 우선 · SC-4) | k6 부하 중 S3~S5, R-a | 보류 ≤ 5초 (≤ 7초 허용), writer 1개, 보류 구간 5xx·timeout 없음 |
-| T5 V2 DDL (1회차: S7만) | S7 수동 DDL, 스키마 대사, stg 기동 | MDL 대기 없음, `schema-diff s7` 차이 = V2 DDL, stg healthy·스모크 통과 |
-| T5' 역방향 (SC-5·6, 2회차) | S6, R-b | 역방향 Yes·지연 0, DDL 뒤에도 복제 유지 |
-| T6 부하·전환 (SC-7, 2회차) | S8, R-c, 원장 대조 | lost 0, dup 0, unknown 설명 |
-| T7 정리 | 1회차는 `revert` 먼저, teardown, false apply, stg 복원 | V1 writer 복귀, V1 backend DB_HOST=mysql, 사이드카·규칙 없음, stg 원래 데이터 |
+| T5 역방향·DDL (SC-5·6) | S6, S7, R-b | 역방향 Yes·지연 0, DDL 뒤에도 복제 유지 |
+| T6 부하·전환 (SC-7) | S8, R-c, 원장 대조 | lost 0, dup 0, unknown 설명 |
+| T7 정리 | teardown, false apply, stg 복원 | V1 backend DB_HOST=mysql(또는 S10 결정), 사이드카·규칙 없음, stg 원래 데이터 |
 
 T0에서 전용 사용자를 포함한 시드 데이터를 V1 API로 생성하고 fixture를 만든다. S1 전체 덤프가 그 데이터를 Stg로 복사하므로, 이후 부하는 V1·Stg 양쪽에 같은 대상이 있는지 확인한 뒤 시작한다. 부하는 이미 승인된 V1 HTTPS endpoint·테스트 전용 계정·fixture가 준비된 뒤에만 건다. 첫 실행은 READ 2 / WRITE 1 / 채팅 1방 1 msg/s, 2분.
 
@@ -266,10 +257,9 @@ sudo mig render
 sudo mig users
 sudo mig check
 sudo mig repl-smoke forward
+sudo mig repl-smoke reverse
 sudo mig status
 ```
-
-1회차는 역방향 복제를 하지 않으므로 `mig repl-smoke reverse`를 돌리지 않는다. 이 시험도 V1 Prod MySQL에 복제 설정을 걸었다 지우고 edge 네트워크를 붙이기 때문이다.
 
 `mig check`에서 FAIL이 하나라도 있으면 T2로 가지 않는다. Grafana "V2 이관 리허설" 대시보드에서 V1·RDS 패널에 값이 나오는지도 본다.
 
@@ -303,12 +293,9 @@ python3 migration/tools/build-fixture.py \
 
 ```bash
 sudo cutover-switch s1-load
-sudo mig schema-diff s1
 sudo cutover-switch s2-forward
 sudo cutover-switch lag
 ```
-
-`mig schema-diff s1`은 V1과 RDS의 테이블 정의(`mysqldump --no-data`, `AUTO_INCREMENT` 값 제외)를 비교한다. SCHEMA_MATCH가 아니면 S2로 가지 않는다. 결과는 `/opt/moyeota-migration/state/schema/s1.diff`에 남는다. S1 재적재 때마다 다시 돌린다.
 
 행 수 대사 (복제 지연 0, 부하 없는 상태에서):
 
@@ -348,7 +335,7 @@ sudo cutover-switch lag
 cat /opt/moyeota-migration/state/switch.log
 ```
 
-SC-4 강제 중단 (1회차는 S0 직후, SC-3보다 먼저):
+SC-4 강제 중단 (S1부터 새로 시작한 상태에서):
 
 ```bash
 sudo HOLD_LIMIT=1 cutover-switch switch
@@ -372,21 +359,14 @@ k6 run --log-format raw --console-output "out/ledger-${RUN}.log" \
 
 ROUTE=v1이라 모든 요청이 V1 backend → ProxySQL로 가고, 컷오버 중 writer만 RDS로 바뀐다.
 
-SC-4 뒤 `lag`에서 정방향 IO/SQL이 Yes이고 지연이 0으로 돌아오면 그대로 SC-3을 한다. 정방향이 없으면 `s1-load`(→ `schema-diff s1`)·`s2-forward`부터 다시 한다.
+### 4.8 T5 — S6 역방향 · S7 V2 DDL · R-b (SC-5 · SC-6)
 
-1회차 SC-3 원장 대조는 4.9의 원장 명령에서 RDS 결과만 뽑아 `ledger-diff.py`를 `--replica` 없이 실행한다 (S5 전 쓰기는 정방향으로, 뒤 쓰기는 RDS에 직접 들어가므로 RDS가 최종 사본이다).
+```bash
+sudo cutover-switch s6-reverse
+sudo cutover-switch lag
+```
 
-### 4.8 T5 — S7 V2 DDL 수동 적용 · stg 기동 (1회차)
-
-SC-3이 끝나 writer가 RDS인 상태에서 한다. 역방향 복제가 없으므로 DDL은 RDS에만 적용되고 V1 Prod로 넘어가지 않는다.
-
-시작 전 확인:
-
-- `V2_DDL_FILE`은 BE와 합의한 승인본 하나다. `USE`·`CREATE DATABASE` 없이 접속한 스키마에 실행되는 문장만 둔다. 파일 출처(레포·커밋)와 sha256을 리허설 기록에 남긴다.
-- stg 이미지가 기동 시 Flyway를 실행하지 않아야 한다. 이미지에 `db/migration`이 있고 stg 프로필에서 켜져 있으면, 수동 DDL이 적용된 스키마에 baseline을 찍고 `V2_x`를 다시 실행하다 실패한다. 이 경우 stg 환경변수에 `SPRING_FLYWAY_ENABLED=false`를 둔다 (SSM 키는 Terraform으로 추가).
-- stg ECS rest·websocket desired 0.
-
-[PC] DDL을 이관 버킷 `config/sql/`에 올린다 (V1 Role은 `config/*`만 읽는다):
+S7 — [PC]에서 DDL을 이관 버킷 `config/sql/`에 올린다 (V1 Role은 `config/*`만 읽는다):
 
 ```bash
 sha256sum "$V2_DDL_FILE"
@@ -399,35 +379,15 @@ aws s3 cp "$V2_DDL_FILE" "s3://$MIG_BUCKET/config/sql/v2-ddl.sql"
 sudo aws s3 cp "s3://$MIG_BUCKET/config/sql/v2-ddl.sql" /var/tmp/moyeota-migration/v2-ddl.sql --region ap-northeast-2
 sudo sha256sum /var/tmp/moyeota-migration/v2-ddl.sql
 sudo mig sql rds moyeota < /var/tmp/moyeota-migration/v2-ddl.sql
-sudo mig schema-diff s7
-sudo cat /opt/moyeota-migration/state/schema/s7.diff
+sudo cutover-switch lag
+sudo mig sql v1 -e "SHOW REPLICA STATUS\G" | grep -E 'Running:|Last_.*Error:|Seconds_Behind'
 ```
-
-DDL 적용 중 MDL 대기는 다른 V1 세션에서 본다 (V1 backend가 ProxySQL → RDS로 계속 쓰는 중이다):
-
-```bash
-sudo mig sql rds -e "SELECT id, time, state, LEFT(info, 80) AS q FROM information_schema.processlist WHERE state LIKE 'Waiting for table metadata lock%'"
-```
-
-`mig schema-diff s7`은 차이가 있으므로 SCHEMA_DIFF·종료 코드 1로 끝나는 것이 정상이다. `s7.diff`의 RDS 쪽(`+`) 변경이 `V2_DDL_FILE` 항목(신규 테이블, `messages.type` enum 값 등)과 정확히 같은지 본다. DDL에 없는 차이가 있으면 stg를 띄우지 않는다. `s7-v1.sql`은 V1 Prod 스키마가 S1 때와 같음을 보여 준다 (`s1-v1.sql`과 비교).
 
 [PC] stg 앱 기동:
 
 ```bash
 CLUSTER="$STG_CLUSTER" v2/scripts/ecs-stg-qa.sh up
 CLUSTER="$STG_CLUSTER" v2/scripts/ecs-stg-qa.sh status
-```
-
-stg 스모크: fixture 사용자 토큰으로 `$V2_API_URL`의 `/api/users/me`·fixture 게시글 조회가 200인지 확인한다. 401이면 stg `JWT_SECRET`이 V1과 다른 것이다 (이슈 8). T7 전에 stg를 다시 내린다 (`ecs-stg-qa.sh down`).
-
-#### 2회차 이후 — S6 역방향 · R-b (SC-5 · SC-6)
-
-S6은 S7보다 먼저 건다. S6가 걸린 상태에서 S7 DDL을 실행하면 DDL이 V1 Prod로 복제된다. 2회차에서 V1으로 DDL을 넘기지 않으려면 S6에 신규 테이블·`flyway_schema_history` 테이블 필터와 기존 테이블 ALTER 건너뛰기 절차를 먼저 넣는다.
-
-```bash
-sudo cutover-switch s6-reverse
-sudo cutover-switch lag
-sudo mig sql v1 -e "SHOW REPLICA STATUS\G" | grep -E 'Running:|Last_.*Error:|Seconds_Behind'
 ```
 
 R-b — [PC] stg 앱을 먼저 내리고 [V1]에서 롤백:
@@ -443,7 +403,7 @@ sudo cutover-switch hg
 sudo cutover-switch lag
 ```
 
-### 4.9 T6 — S8 URL 비율 전환 · R-c · 원장 대조 (SC-7, 2회차 이후 · 원장 대조는 1회차 SC-3에도 쓴다)
+### 4.9 T6 — S8 URL 비율 전환 · R-c · 원장 대조 (SC-7)
 
 S1부터 새로 시작해 S5·S6·S7까지 마친 상태에서 [PC]:
 
@@ -494,16 +454,6 @@ python3 migration/tools/ledger-diff.py --k6 "out/ledger-${RUN}.log" --db "out/rd
 ```
 
 ### 4.10 T7 — S10 정리
-
-1회차 (역방향 없음) — [PC] stg를 내린 뒤 [V1]에서 writer를 V1으로 되돌린다. S5 이후 RDS가 받은 쓰기는 V1에 반영되지 않는다:
-
-```bash
-sudo cutover-switch revert
-sudo cutover-switch hg
-grep revert /opt/moyeota-migration/state/switch.log
-```
-
-`revert`가 V1 `super_read_only`를 OFF로 돌리므로 아래 "V1을 쓰기 가능 상태로 되돌리기로 했다면" 경로에서 `SET GLOBAL` 줄은 건너뛴다. V1에 복제 설정이 없으므로 아래 복제 정지도 정방향이 남아 있을 때만 한다.
 
 [V1] 복제 정지:
 
@@ -581,7 +531,7 @@ aws rds delete-db-instance --db-instance-identifier "$STG_RDS" --skip-final-snap
 | ProxySQL | ONLINE writer가 0개 또는 2개 |
 | 복제 | Last_IO_Error / Last_SQL_Error 발생, 지연이 줄지 않음 |
 | V1 EC2 | CPU credit이 계속 줄어듦, MySQL 연결이 max_connections에 근접, 디스크 부족 |
-| 요청 | 5xx·timeout 급증 (k6 중지 → S5 전 `cutover-switch abort`, S5 뒤 1회차 `revert` / 2회차 `rollback-b`) |
+| 요청 | 5xx·timeout 급증 (k6 중지 → `cutover-switch abort` 또는 `rollback-b`) |
 | TLS | `$V1_API_HOST` 인증서 검증 실패 → 부하 시작 금지 |
 
 ## 6. 전제·남은 게이트
