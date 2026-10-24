@@ -76,8 +76,11 @@ adm() { docker exec -i -e MYSQL_PWD="$ADMIN_PW" "$CLI" mysql -h 127.0.0.1 -P 603
 now_ms() { date +%s%3N; }
 stamp() { echo "[$(date '+%H:%M:%S.%3N')] $*"; }
 
+# v1()/rds()는 -N이라 \G 출력에서 필드 이름이 빠진다 — --column-names로 되돌린다
+replica_status() { "$1" --column-names -e "SHOW REPLICA STATUS\G"; }
+
 replica_field() {
-  "$1" -e "SHOW REPLICA STATUS\G" | awk -v f="$2" -F': ' '$1 ~ "^ *"f"$" {print $2}'
+  replica_status "$1" | awk -v f="$2" -F': ' '$1 ~ "^ *"f"$" {print $2}'
 }
 
 set_servers() {
@@ -141,10 +144,10 @@ cmd_lag() {
   load_secrets; cli_up
   echo "== V1 Prod binlog: $(v1 -e 'SHOW BINARY LOG STATUS' | awk '{print $1":"$2}')  super_read_only=$(v1 -e 'SELECT @@super_read_only')"
   echo "== 정방향 (RDS 복제본)"
-  rds -e "SHOW REPLICA STATUS\G" | grep -E ' (Replica_IO_Running|Replica_SQL_Running|Seconds_Behind_Source|Relay_Source_Log_File|Exec_Source_Log_Pos|Last_IO_Error|Last_SQL_Error):' || echo "  (없음)"
+  replica_status rds | grep -E ' (Replica_IO_Running|Replica_SQL_Running|Seconds_Behind_Source|Relay_Source_Log_File|Exec_Source_Log_Pos|Last_IO_Error|Last_SQL_Error):' || echo "  (없음)"
   echo "== RDS binlog: $(rds -e 'SHOW BINARY LOG STATUS' | awk '{print $1":"$2}')"
   echo "== 역방향 (V1 복제본)"
-  v1 -e "SHOW REPLICA STATUS\G" | grep -E ' (Replica_IO_Running|Replica_SQL_Running|Seconds_Behind_Source|Relay_Source_Log_File|Exec_Source_Log_Pos|Last_IO_Error|Last_SQL_Error|Replicate_Do_DB):' || echo "  (없음)"
+  replica_status v1 | grep -E ' (Replica_IO_Running|Replica_SQL_Running|Seconds_Behind_Source|Relay_Source_Log_File|Exec_Source_Log_Pos|Last_IO_Error|Last_SQL_Error|Replicate_Do_DB):' || echo "  (없음)"
 }
 
 abort_ra() {
