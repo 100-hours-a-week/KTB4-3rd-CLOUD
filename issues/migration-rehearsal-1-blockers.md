@@ -20,7 +20,7 @@
 | 7 | stg RDS 연결 수가 10/24 00:00 KST부터 약 30 → 40 | 출처 불명 연결 | 확인 필요 |
 | 8 | SC-5·SC-7은 같은 토큰으로 stg API도 호출 | stg `JWT_SECRET`이 V1과 다르면 401 | 확인 필요 |
 | 9 | V2 Prod ASG instance refresh 실패 (general-od·rest-od) | 리허설과 별개, On-Demand vCPU 32 한도 공유 | 별도 처리 |
-| 10 | V1 MySQL이 V2 Prod RDS의 replica로 설정됨 (SQL thread 오류로 정지) | `repl-smoke reverse`·S6 진행 불가 | **정리 결정 필요** |
+| 10 | V1 MySQL이 V2 Prod RDS의 replica로 설정됨 (SQL thread 오류로 정지) | `repl-smoke reverse`·S6 진행 불가 | 해결 (승인 후 `RESET REPLICA ALL`, T1 통과) |
 | 11 | V1 compose가 `APP_ENV=dev`로 실행 중 (`moyeota-app-dev`·`moyeota-db-dev`) | 이관 설정 기본값(`-prod`)과 불일치 | `mig` 자동 탐지로 우회 |
 | 12 | `mig` 버그: ProxySQL admin 쿼리의 `CONCAT`, 같은 크기 파일을 건너뛰는 S3 sync | `mig check` FAIL 2건 | 수정 (`a2bf7f4`, `7dd4116`) |
 
