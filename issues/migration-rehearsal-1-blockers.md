@@ -20,6 +20,9 @@
 | 7 | stg RDS 연결 수가 10/24 00:00 KST부터 약 30 → 40 | 출처 불명 연결 | 확인 필요 |
 | 8 | SC-5·SC-7은 같은 토큰으로 stg API도 호출 | stg `JWT_SECRET`이 V1과 다르면 401 | 확인 필요 |
 | 9 | V2 Prod ASG instance refresh 실패 (general-od·rest-od) | 리허설과 별개, On-Demand vCPU 32 한도 공유 | 별도 처리 |
+| 10 | V1 MySQL이 V2 Prod RDS의 replica로 설정됨 (SQL thread 오류로 정지) | `repl-smoke reverse`·S6 진행 불가 | **정리 결정 필요** |
+| 11 | V1 compose가 `APP_ENV=dev`로 실행 중 (`moyeota-app-dev`·`moyeota-db-dev`) | 이관 설정 기본값(`-prod`)과 불일치 | `mig` 자동 탐지로 우회 |
+| 12 | `mig` 버그: ProxySQL admin 쿼리의 `CONCAT`, 같은 크기 파일을 건너뛰는 S3 sync | `mig check` FAIL 2건 | 수정 (`a2bf7f4`, `7dd4116`) |
 
 ## 1. V1 backend가 V2 Prod 실이관용 ProxySQL을 거침
 
@@ -66,12 +69,41 @@
 - general-od·rest-od refresh는 10/22에 실패했다. 사유는 scale-in protection(`i-01627e165623ae1ac`, `i-09863e6f132ee5941`)과 반복된 `VcpuLimitExceeded`다.
 - ws-od가 끝난 뒤 protection 처리를 정하고 다시 시작해야 한다. 리허설과 같은 On-Demand vCPU 32 한도를 쓴다.
 
+## 10. V1 MySQL이 V2 Prod RDS의 replica
+
+- 현상 (`mig status`, 10/24 08:4x UTC): V1 `SHOW REPLICA STATUS`의 `Source_Host`가 `moyeota-v2-prod` RDS다. `Replica_IO_Running: Yes`, `Replica_SQL_Running: No`. `mysql-bin-changelog.000085` end_log_pos 9020 트랜잭션에서 worker가 실패해 SQL thread가 멈췄다. V2 Prod 실이관 때 걸어 둔 역방향(V2 Prod → V1) 복제로 보인다.
+- 영향: 지금 V2 Prod 변경은 V1에 적용되지 않는다(SQL 정지). `mig repl-smoke reverse`는 "V1에 이미 복제 설정이 있다"로 중단되고, 리허설 S6는 같은 채널을 stg RDS로 덮어쓴다.
+- 처리안: 설정과 오류를 기록한 뒤 `STOP REPLICA; RESET REPLICA ALL;`. V2 Prod의 V1 쪽 롤백 경로를 없애는 결정이므로 운영자가 승인한다.
+
+## 11. V1 compose `APP_ENV=dev`
+
+- V1 Prod 호스트의 네트워크가 `moyeota-app-dev`, `moyeota-db-dev`다(compose 규칙상 볼륨도 `moyeota-mysql-dev`). Terraform 기본값 `moyeota-app-prod`·`moyeota-db-prod`와 다르다.
+- `mig`가 설정 이름이 없으면 실행 중인 컨테이너 기준으로 네트워크를 찾도록 고쳤다(`a642828`). `terraform.tfvars`의 `migration_v1_compose`에 실제 이름을 적어 두는 것이 맞다. 이 인스턴스가 이관 원본으로 맞는지 운영자가 확인한다.
+
+## 12. `mig` 버그 (수정)
+
+- ProxySQL 관리 인터페이스(6032)는 SQLite 문법이라 `CONCAT()`이 없다. `mig check`의 런타임 상태·monitor 쿼리를 `||` 연결로 바꿨다(`a2bf7f4`).
+- 고친 `mig`가 이전 버전과 같은 크기(23,980바이트)여서, `mig render`의 `aws s3 sync`가 받지 않고 옛 파일을 다시 설치했다. sync에 `--exact-timestamps`를 붙였다(`7dd4116`).
+- 브랜치의 `mig.sh`를 S3에 직접 올려 쓰고 있다. 머지 전에 메인 체크아웃에서 `terraform apply`를 하면 `config/bin/mig`가 옛 버전으로 돌아간다.
+
 ## 다음 순서
 
 1. [V1] `sudo MIG_BUCKET=moyeota-v2-migration-486152170229 bash /tmp/v1-switch-to-rehearsal.sh` (한 줄 단독 실행) → `mig check` 전 항목 PASS
 2. [V1] `sudo mig repl-smoke forward`, `sudo mig repl-smoke reverse`
 3. [PC] `v1-test-users.sh` 재실행 → `precheck.sh`에서 T0-4 PASS
 4. T2(S1 적재·S2 복제·행 수 대사) → T3(S0) → T4(SC-3, k6 부하 중 `cutover-switch switch`)
+
+## 1회차 범위 결정 (2026-10-24 16:50)
+
+- [ ] 1회차는 역방향 복제(S6)를 하지 않는다 — SC-1 → S0 → SC-4 → SC-3 → S7 → `revert` 순서, SC-5·SC-6·SC-7은 2회차
+- [ ] S7 V2 스키마는 수동 SQL로 RDS에만 적용 — V1 Prod로 DDL이 넘어가지 않음
+- [ ] `V2_DDL_FILE` 승인본 확정 (출처 커밋·sha256 기록)
+- [ ] stg 이미지 Flyway 실행 여부 확인, 켜져 있으면 stg `SPRING_FLYWAY_ENABLED=false`
+- [ ] `mig schema-diff` 추가 — S1 뒤 SCHEMA_MATCH, S7 뒤 차이 = V2 DDL
+- [ ] `cutover-switch revert` 추가 — S5 뒤 역방향 없이 V1 writer 복귀, 버린 RDS binlog 구간 기록
+- [ ] 수정한 `mig`·`cutover-switch` 반영 — `v2` terraform apply(이관 버킷 `config/bin` 갱신) 후 V1에서 `mig render`로 재설치
+- [ ] T1 게이트에서 `repl-smoke reverse` 제외
+- [ ] V1 Prod에 S5 이후 실사용자 쓰기가 없는지 확인 (`revert` 때 RDS 쪽 쓰기는 V1으로 돌아가지 않음)
 
 ## 진행 방식 제약
 
