@@ -8,6 +8,7 @@
 #   sudo mig status                      컨테이너·ProxySQL 서버 상태·양쪽 복제 상태
 #   sudo mig sql v1|rds|admin [mysql 옵션]   V1 root / RDS master / ProxySQL radmin 셸 (예: -e "SELECT 1")
 #   sudo mig endpoint proxysql|mysql     V1 backend만 재생성 (S0: proxysql:6033 + stg 앱 계정 / 복귀: V1 원래 설정)
+#   sudo mig schema-diff <label>         V1·RDS 테이블 정의(뷰·트리거·루틴 제외)를 덤프해 비교 → state/schema/<label>.diff (차이 있으면 종료 코드 1)
 #   sudo mig repl-smoke forward|reverse  복제 연결만 시험하고 되돌린다 (forward: RDS → relay, reverse: V1 → RDS, 둘 다 TLS)
 #   sudo mig teardown [--drop-users]     사이드카·edge 연결·S1 덤프 제거 (V1 Compose 프로젝트 moyeota는 건드리지 않는다)
 #
@@ -44,6 +45,39 @@ load_conf() {
   V1_MYSQL_HOST="$V1_MYSQL_CONTAINER"
   # shellcheck disable=SC2034
   MYSQL_SERVER_VERSION="${MYSQL_IMAGE##*:}"
+  resolve_v1_networks
+}
+
+# 컨테이너가 붙은 네트워크 (이관용 네트워크 제외)
+container_networks() {
+  docker inspect -f '{{range $k, $v := .NetworkSettings.Networks}}{{println $k}}{{end}}' "$1" 2>/dev/null |
+    grep -v -e '^$' -e 'migration' || true
+}
+
+# migration.env의 V1 네트워크 이름이 호스트에 없으면 실행 중인 컨테이너 기준으로 정한다.
+# DB: V1 MySQL이 붙은 네트워크 (여러 개면 internal). 앱: backend 네트워크 중 DB가 아닌 것 (여러 개면 nginx와 공유하는 것).
+resolve_v1_networks() {
+  local n nets
+  if ! docker network inspect "$V1_DB_NETWORK" >/dev/null 2>&1; then
+    mapfile -t nets < <(container_networks "$V1_MYSQL_CONTAINER")
+    if (( ${#nets[@]} > 1 )); then
+      mapfile -t nets < <(for n in "${nets[@]}"; do
+        [ "$(docker network inspect -f '{{.Internal}}' "$n")" = true ] && echo "$n"; done)
+    fi
+    (( ${#nets[@]} == 1 )) || die "V1 DB 네트워크를 정할 수 없다 ($V1_MYSQL_CONTAINER: ${nets[*]:-없음}) — migration_v1_compose.db_network를 지정한다"
+    echo "mig: V1_DB_NETWORK $V1_DB_NETWORK 없음 → $V1_MYSQL_CONTAINER 기준 ${nets[0]}" >&2
+    V1_DB_NETWORK="${nets[0]}"
+  fi
+  if ! docker network inspect "$V1_APP_NETWORK" >/dev/null 2>&1; then
+    mapfile -t nets < <(container_networks "$V1_BACKEND_CONTAINER" | grep -vxF "$V1_DB_NETWORK" || true)
+    if (( ${#nets[@]} > 1 )); then
+      mapfile -t nets < <(for n in "${nets[@]}"; do
+        container_networks "${V1_NGINX_CONTAINER:-moyeota-nginx-1}" | grep -qxF "$n" && echo "$n"; done)
+    fi
+    (( ${#nets[@]} == 1 )) || die "V1 앱 네트워크를 정할 수 없다 ($V1_BACKEND_CONTAINER: ${nets[*]:-없음}) — migration_v1_compose.app_network를 지정한다"
+    echo "mig: V1_APP_NETWORK $V1_APP_NETWORK 없음 → $V1_BACKEND_CONTAINER 기준 ${nets[0]}" >&2
+    V1_APP_NETWORK="${nets[0]}"
+  fi
 }
 
 param() {
@@ -385,6 +419,33 @@ cmd_repl_smoke() {
   esac
 }
 
+schema_norm() {
+  sed -E -e 's/ AUTO_INCREMENT=[0-9]+//' -e '/^\/\*![0-9]+ .*\*\/;$/d' -e '/^--/d' -e '/^$/d'
+}
+
+cmd_schema_diff() {
+  need_root; load_conf; check_host; load_secrets; rds_master
+  local label="${1:-}" dir="$STATE/schema"
+  [[ "$label" =~ ^[A-Za-z0-9_-]+$ ]] || die "사용법: mig schema-diff <label> (예: s1, s7)"
+  local opts=(--no-data --single-transaction --skip-lock-tables --skip-comments --skip-triggers
+    --no-tablespaces --set-gtid-purged=OFF --skip-add-drop-table --skip-set-charset)
+  install -d -m 0700 "$dir"
+  # shellcheck disable=SC2016
+  docker exec "$V1_MYSQL_CONTAINER" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -uroot "$@"' sh "${opts[@]}" "$APP_DB_NAME" \
+    | schema_norm > "$dir/$label-v1.sql"
+  docker exec -e MYSQL_PWD="$RDS_MASTER_PASSWORD" "$CLI" \
+    mysqldump -h "$RDS_HOST" -P "$RDS_PORT" -u "$RDS_MASTER_USER" --ssl-mode=REQUIRED "${opts[@]}" "$APP_DB_NAME" \
+    | schema_norm > "$dir/$label-rds.sql"
+  echo "V1 CREATE TABLE $(grep -c '^CREATE TABLE' "$dir/$label-v1.sql") / RDS CREATE TABLE $(grep -c '^CREATE TABLE' "$dir/$label-rds.sql")"
+  if diff -u --label "v1/$APP_DB_NAME" --label "rds/$APP_DB_NAME" "$dir/$label-v1.sql" "$dir/$label-rds.sql" > "$dir/$label.diff"; then
+    echo "SCHEMA_MATCH ($label)"
+  else
+    echo "SCHEMA_DIFF ($label) → $dir/$label.diff"
+    grep -E '^[-+](CREATE TABLE|  `|\) ENGINE)' "$dir/$label.diff" | head -60
+    return 1
+  fi
+}
+
 cmd_teardown() {
   need_root; load_conf; check_host
   local drop_users=false
@@ -415,6 +476,7 @@ case "${1:-}" in
   status)     shift; cmd_status ;;
   endpoint)   shift; cmd_endpoint "$@" ;;
   repl-smoke) shift; cmd_repl_smoke "$@" ;;
+  schema-diff) shift; cmd_schema_diff "$@" ;;
   teardown)   shift; cmd_teardown "$@" ;;
   sql)
     shift
@@ -428,7 +490,7 @@ case "${1:-}" in
     esac
     ;;
   *)
-    sed -n '3,15p' "$0"
+    sed -n '3,16p' "$0"
     exit 1
     ;;
 esac
