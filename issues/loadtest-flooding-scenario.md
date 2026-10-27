@@ -2,7 +2,7 @@
 
 ## GitHub
 
-- 이슈: (생성 후 채움)
+- 이슈: [#127](https://github.com/100-hours-a-week/KTB4-3rd-CLOUD/issues/127)
 - 관련 이슈: [#125](https://github.com/100-hours-a-week/KTB4-3rd-CLOUD/issues/125) (스케줄러 부하테스트 SC-3 재수집 실패)
 - 설계 문서: `v2/FLOODING_SCENARIO.md`
 - 실행 런북: `v2/FLOODING_RUNBOOK.md`

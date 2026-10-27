@@ -2,7 +2,7 @@
 
 ## GitHub
 
-- 이슈: (생성 후 채움)
+- 이슈: [#126](https://github.com/100-hours-a-week/KTB4-3rd-CLOUD/issues/126)
 - 구현 PR: [#124](https://github.com/100-hours-a-week/KTB4-3rd-CLOUD/pull/124)
 - 브랜치: `feat/v2-ecs-shared-pool`
 
