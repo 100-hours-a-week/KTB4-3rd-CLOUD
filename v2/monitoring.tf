@@ -94,10 +94,11 @@ resource "aws_vpc_security_group_ingress_rule" "monitoring_loki_from_ecs_instanc
   to_port                      = local.monitoring_loki_port
 }
 
-# 모니터링 SG ← 태스크 SG : OTLP push 포트만 연다 (otlp_push_stages에 든 스테이지의 태스크)
+# 모니터링 SG ← 태스크 SG : OTLP push 포트만 연다 (otlp_push_stages에 든 스테이지의 메트릭 수집 서비스 태스크)
 resource "aws_vpc_security_group_ingress_rule" "monitoring_otlp_from_tasks" {
   for_each = local.monitoring_enabled ? {
-    for k, s in local.ecs_service_instances : k => s if contains(var.otlp_push_stages, s.stage)
+    for k, s in local.ecs_service_instances : k => s
+    if contains(var.otlp_push_stages, s.stage) && contains(keys(local.monitoring_metrics_endpoints), s.service)
   } : {}
 
   security_group_id            = aws_security_group.monitoring[0].id
