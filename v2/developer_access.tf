@@ -213,6 +213,42 @@ data "aws_iam_policy_document" "dev_backend" {
     resources = ["*"]
   }
 
+  # --- dev DDL 실행 (SSM Run Command) -------------------------------------------
+  # 아래 문서·인스턴스는 이 Terraform 밖에서 만들어졌다 (dev-db 인스턴스, moyeota-v2-dev-mysql-ddl 문서).
+  # 상태에 이미 있는 권한을 코드에 옮긴 것이라 ARN을 직접 적는다. 문서·인스턴스를 TF로 옮기면 이 부분을 참조로 바꾼다.
+  statement {
+    sid = "RunCommandConsoleRead"
+    actions = [
+      "ssm:ListCommands",
+      "ssm:ListCommandInvocations",
+      "ssm:GetCommandInvocation",
+      "ssm:ListDocuments",
+      "ssm:ListDocumentVersions",
+      "ssm:DescribeDocument",
+      "ssm:GetDocument",
+      "ssm:DescribeInstanceInformation",
+      "ssm:DescribeInstanceProperties",
+      "ssm:DescribeDocumentParameters",
+      "ec2:DescribeInstances",
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid     = "RunDevDdlDocument"
+    actions = ["ssm:SendCommand"]
+    resources = [
+      "arn:${local.dev_backend_partition}:ssm:${local.dev_backend_region}:${local.dev_backend_account_id}:document/moyeota-v2-dev-mysql-ddl",
+      "arn:${local.dev_backend_partition}:ec2:${local.dev_backend_region}:${local.dev_backend_account_id}:instance/i-0220340854fa43448",
+    ]
+  }
+
+  statement {
+    sid       = "ReadDevDdlResults"
+    actions   = ["ssm:GetCommandInvocation", "ssm:ListCommandInvocations"]
+    resources = ["*"]
+  }
+
   # SecureString 암·복호화 (aws/ssm 키). SSM을 통한 호출일 때만
   statement {
     sid       = "EncryptDecryptViaSsm"
