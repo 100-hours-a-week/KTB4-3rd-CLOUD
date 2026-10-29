@@ -9,6 +9,12 @@ global:
 rule_files:
   - /etc/prometheus/rules/*.yml
 
+# OTLP push(--web.enable-otlp-receiver)로 들어온 리소스 속성을 라벨로 올린다.
+otlp:
+  promote_resource_attributes:
+    - deployment.environment
+    - service.name
+
 scrape_configs:
   # 모니터링 스택 자체
   - job_name: prometheus

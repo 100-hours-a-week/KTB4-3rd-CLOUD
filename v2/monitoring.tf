@@ -16,6 +16,18 @@ locals {
 
   monitoring_loki_port = 3100
 
+  # 태스크 → 모니터링 호스트 OTLP push (C안). Cloud Map 네임스페이스에는 호스트 레코드가 없어서 private IP를 쓴다.
+  monitoring_otlp_port = 9090
+
+  # OTLP push를 켤 스테이지의 태스크 환경 변수. ecs.tf module "ecs_service"가 붙인다.
+  otlp_push_environment = {
+    for stage in(local.monitoring_enabled ? var.otlp_push_stages : []) : stage => {
+      OTLP_METRICS_ENABLED = "true"
+      OTLP_METRICS_URL     = "http://${module.monitoring[0].private_ip}:${local.monitoring_otlp_port}/api/v1/otlp/v1/metrics"
+      STAGE                = stage
+    }
+  }
+
   # 서비스 → 메트릭 엔드포인트. frontend(Next.js)는 메트릭을 노출하지 않으므로 수집하지 않는다.
   #   rest·websocket : Spring Actuator 관리 포트 (ALB 헬스체크와 같은 8090)
   #   fastapi        : 앱 포트의 /metrics
@@ -80,6 +92,20 @@ resource "aws_vpc_security_group_ingress_rule" "monitoring_loki_from_ecs_instanc
   ip_protocol                  = "tcp"
   from_port                    = local.monitoring_loki_port
   to_port                      = local.monitoring_loki_port
+}
+
+# 모니터링 SG ← 태스크 SG : OTLP push 포트만 연다 (otlp_push_stages에 든 스테이지의 태스크)
+resource "aws_vpc_security_group_ingress_rule" "monitoring_otlp_from_tasks" {
+  for_each = local.monitoring_enabled ? {
+    for k, s in local.ecs_service_instances : k => s if contains(var.otlp_push_stages, s.stage)
+  } : {}
+
+  security_group_id            = aws_security_group.monitoring[0].id
+  description                  = "OTLP metrics push from ${each.key} tasks"
+  referenced_security_group_id = module.ecs_service[each.key].task_security_group_id
+  ip_protocol                  = "tcp"
+  from_port                    = local.monitoring_otlp_port
+  to_port                      = local.monitoring_otlp_port
 }
 
 # 태스크 SG ← 모니터링 SG : 메트릭 포트만 연다 (앱 트래픽 포트와 분리)

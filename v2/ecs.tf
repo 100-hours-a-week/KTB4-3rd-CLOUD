@@ -190,7 +190,7 @@ module "ecs_service" {
   container_memory           = each.value.container_memory
   container_port             = each.value.container_port
   additional_container_ports = each.value.additional_ports
-  environment                = each.value.environment
+  environment                = merge(each.value.environment, lookup(local.otlp_push_environment, each.value.stage, {}))
   secrets                    = each.value.secrets
   entry_point                = contains(local.be_container_services, each.value.service) ? local.be_container_entry_point : null
   command                    = contains(local.be_container_services, each.value.service) ? local.be_container_command : null

@@ -942,6 +942,20 @@ variable "monitoring_grafana_certificate_create" {
   }
 }
 
+variable "otlp_push_stages" {
+  description = <<-EOT
+    태스크가 메트릭을 OTLP로 모니터링 호스트에 push할 스테이지. 여기 든 스테이지의 태스크에만 OTLP_METRICS_* 환경 변수와 9090 SG 규칙이 생긴다.
+    pull(/actuator/prometheus, /metrics)은 그대로 유지된다 (병행 기간). dev에서 먼저 검증한 뒤 stg·prod를 넣는다. 빈 리스트면 아무것도 바꾸지 않는다.
+  EOT
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for s in var.otlp_push_stages : contains(["dev", "stg", "prod"], s)])
+    error_message = "otlp_push_stages values must be dev, stg or prod."
+  }
+}
+
 variable "monitoring_alloy_stages" {
   description = <<-EOT
     Alloy DAEMON을 띄워 Loki로 로그를 보낼 ECS 스테이지. ecs_stages에 없는 값은 무시한다.

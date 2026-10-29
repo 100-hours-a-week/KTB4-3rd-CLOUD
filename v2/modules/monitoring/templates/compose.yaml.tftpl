@@ -17,8 +17,10 @@ services:
       - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=${prometheus_retention_days}d
       - --web.enable-lifecycle
+      # ECS 태스크가 OTLP로 메트릭을 push한다 (/api/v1/otlp/v1/metrics). SG가 태스크 SG만 허용한다.
+      - --web.enable-otlp-receiver
     ports:
-      - "127.0.0.1:9090:9090"
+      - "9090:9090"
     volumes:
       - ./prometheus:/etc/prometheus:ro
       - ${data_dir}/prometheus:/prometheus
