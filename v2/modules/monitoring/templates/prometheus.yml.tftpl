@@ -9,6 +9,13 @@ global:
 rule_files:
   - /etc/prometheus/rules/*.yml
 
+# OTLP push(--web.enable-otlp-receiver)로 들어온 리소스 속성을 라벨로 올린다.
+# pull이 붙이는 stage·service 라벨과 같은 이름이라 대시보드·알림을 바꾸지 않아도 된다 (앱이 두 키를 보낸다).
+otlp:
+  promote_resource_attributes:
+    - stage
+    - service
+
 scrape_configs:
   # 모니터링 스택 자체
   - job_name: prometheus
