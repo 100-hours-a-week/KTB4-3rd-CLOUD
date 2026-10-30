@@ -10,6 +10,8 @@
 #   sudo cutover-switch s6-reverse       역방향 복제 RDS → V1 시작 (switch가 기록한 위치부터)
 #   sudo cutover-switch rollback-b       R-b: RDS 보류 → 역방향 따라잡기 → V1로 되돌림 (V2 stg desired 0 먼저)
 #   sudo cutover-switch abort            R-a: S5 이전 중단 (V1 super_read_only OFF, V1 ONLINE)
+#   sudo cutover-switch revert           역방향 없이 V1으로 되돌림 (S5 뒤, 1회차): RDS 보류 → V1 쓰기 허용 → V1 ONLINE
+#                                        S5 이후 RDS가 받은 쓰기는 V1에 없다. 버린 RDS binlog 구간을 switch.log에 남긴다
 #   sudo cutover-switch hg               ProxySQL hg10 상태·연결 풀
 #
 #   보류 구간에서 호출이 빨라야 하므로 상주 클라이언트 컨테이너(moyeota-migcli, host 네트워크)에 docker exec로 붙는다.
@@ -74,8 +76,11 @@ adm() { docker exec -i -e MYSQL_PWD="$ADMIN_PW" "$CLI" mysql -h 127.0.0.1 -P 603
 now_ms() { date +%s%3N; }
 stamp() { echo "[$(date '+%H:%M:%S.%3N')] $*"; }
 
+# v1()/rds()는 -N이라 \G 출력에서 필드 이름이 빠진다 — --column-names로 되돌린다
+replica_status() { "$1" --column-names -e "SHOW REPLICA STATUS\G"; }
+
 replica_field() {
-  "$1" -e "SHOW REPLICA STATUS\G" | awk -v f="$2" -F': ' '$1 ~ "^ *"f"$" {print $2}'
+  replica_status "$1" | awk -v f="$2" -F': ' '$1 ~ "^ *"f"$" {print $2}'
 }
 
 set_servers() {
@@ -111,7 +116,9 @@ cmd_s1_load() {
     # shellcheck disable=SC2016
     docker exec "$V1C" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysqldump -uroot --single-transaction --source-data=2 --set-gtid-purged=OFF --hex-blob --no-tablespaces --databases "$1"' sh "$DB" > "$dump" )
   local pos_line file pos
-  pos_line="$(head -c 4000000 "$dump" | grep -m1 -E "CHANGE (REPLICATION SOURCE|MASTER) TO")" || die "덤프에서 binlog 위치를 찾지 못했다"
+  # 파일을 grep이 직접 읽는다. head | grep -m1은 grep이 먼저 끝나 head가 SIGPIPE(141)를 받고, pipefail에서 실패로 잡힌다.
+  [ -s "$dump" ] || die "덤프 파일이 비었다 ($dump) — mysqldump 오류 확인"
+  pos_line="$(grep -m1 -E "CHANGE (REPLICATION SOURCE|MASTER) TO" "$dump")" || die "덤프에서 binlog 위치를 찾지 못했다"
   file="$(sed -E "s/.*(SOURCE|MASTER)_LOG_FILE='([^']+)'.*/\2/" <<<"$pos_line")"
   pos="$(sed -E "s/.*(SOURCE|MASTER)_LOG_POS=([0-9]+).*/\2/" <<<"$pos_line")"
   echo "$file $pos" > "$STATE/s1-coords"
@@ -137,10 +144,10 @@ cmd_lag() {
   load_secrets; cli_up
   echo "== V1 Prod binlog: $(v1 -e 'SHOW BINARY LOG STATUS' | awk '{print $1":"$2}')  super_read_only=$(v1 -e 'SELECT @@super_read_only')"
   echo "== 정방향 (RDS 복제본)"
-  rds -e "SHOW REPLICA STATUS\G" | grep -E ' (Replica_IO_Running|Replica_SQL_Running|Seconds_Behind_Source|Relay_Source_Log_File|Exec_Source_Log_Pos|Last_IO_Error|Last_SQL_Error):' || echo "  (없음)"
+  replica_status rds | grep -E ' (Replica_IO_Running|Replica_SQL_Running|Seconds_Behind_Source|Relay_Source_Log_File|Exec_Source_Log_Pos|Last_IO_Error|Last_SQL_Error):' || echo "  (없음)"
   echo "== RDS binlog: $(rds -e 'SHOW BINARY LOG STATUS' | awk '{print $1":"$2}')"
   echo "== 역방향 (V1 복제본)"
-  v1 -e "SHOW REPLICA STATUS\G" | grep -E ' (Replica_IO_Running|Replica_SQL_Running|Seconds_Behind_Source|Relay_Source_Log_File|Exec_Source_Log_Pos|Last_IO_Error|Last_SQL_Error|Replicate_Do_DB):' || echo "  (없음)"
+  replica_status v1 | grep -E ' (Replica_IO_Running|Replica_SQL_Running|Seconds_Behind_Source|Relay_Source_Log_File|Exec_Source_Log_Pos|Last_IO_Error|Last_SQL_Error|Replicate_Do_DB):' || echo "  (없음)"
 }
 
 abort_ra() {
@@ -230,6 +237,34 @@ cmd_rollback_b() {
   show_hg
 }
 
+cmd_revert() {
+  load_secrets; cli_up
+  [ -z "$(replica_field v1 Source_Host)" ] || die "V1에 역방향 복제가 있다 — rollback-b를 쓴다"
+  [ -z "$(replica_field rds Source_Host)" ] || die "RDS에 정방향 복제가 남아 있다 (S5 전) — abort를 쓴다"
+  [ -s "$STATE/rds-coords" ] || die "switch 기록(rds-coords)이 없다 — S5까지 간 상태가 아니다"
+  [ "$(adm -e "SELECT status FROM runtime_mysql_servers WHERE hostgroup_id=10 AND hostname='$RDS_HOST'")" = ONLINE ] || die "RDS가 ONLINE writer가 아니다 (hg)"
+  echo "S5 이후 RDS가 받은 쓰기는 V1으로 돌아가지 않는다 (역방향 복제 없음)."
+  read -r -p "V2 stg rest·websocket desired 0, V1에 테스트 외 쓰기 없음을 확인했는가? (yes): " ans
+  [ "$ans" = yes ] || die "중단"
+  local t0 start file pos
+  t0="$(now_ms)"
+  read -r start < "$STATE/rds-coords"
+  stamp "되돌림 보류: RDS → OFFLINE_SOFT"
+  set_servers OFFLINE_HARD OFFLINE_SOFT
+  until [ "$(conn_used "$RDS_HOST")" = 0 ]; do
+    [ $(( $(now_ms) - t0 )) -lt 30000 ] || { stamp "RDS 연결이 30초 안에 끝나지 않음 — RDS ONLINE으로 복구"; set_servers OFFLINE_HARD ONLINE; exit 1; }
+    sleep 0.1
+  done
+  read -r file pos _ < <(rds -e "SHOW BINARY LOG STATUS")
+  stamp "V1에 반영되지 않는 RDS 쓰기 구간: $start → $file:$pos"
+  v1 -e "SET GLOBAL super_read_only = OFF; SET GLOBAL read_only = OFF;"
+  set_servers ONLINE OFFLINE_HARD
+  local held=$(( $(now_ms) - t0 ))
+  echo "$(date -Iseconds) revert held_ms=$held rds_discarded=${start// /:}..$file:$pos" >> "$STATE/switch.log"
+  stamp "되돌림 완료 ${held} ms"
+  show_hg
+}
+
 case "${1:-}" in
   s1-load) cmd_s1_load ;;
   s2-forward) cmd_s2_forward ;;
@@ -238,6 +273,7 @@ case "${1:-}" in
   s6-reverse) cmd_s6_reverse ;;
   rollback-b) cmd_rollback_b ;;
   abort) cmd_abort ;;
+  revert) cmd_revert ;;
   hg) load_secrets; cli_up; show_hg ;;
-  *) sed -n '3,16p' "$0"; exit 1 ;;
+  *) sed -n '3,18p' "$0"; exit 1 ;;
 esac
