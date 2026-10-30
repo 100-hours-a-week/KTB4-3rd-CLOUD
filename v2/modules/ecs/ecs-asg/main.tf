@@ -47,9 +47,10 @@ data "aws_ssm_parameter" "ecs_ami" {
 # -----------------------------------------------------------------------------
 
 resource "aws_launch_template" "this" {
-  name                   = local.lt_name
-  description            = "ECS ${var.role}/${var.purchase} hosts for ${var.cluster_name}"
-  image_id               = data.aws_ssm_parameter.ecs_ami.insecure_value
+  name        = local.lt_name
+  description = "ECS ${var.role}/${var.purchase} hosts for ${var.cluster_name}"
+  # ami_id가 있으면 고정 AMI, 없으면 SSM의 최신 ECS AMI를 쓴다 (교체는 instance refresh로 한 대씩 진행)
+  image_id               = var.ami_id != null ? var.ami_id : data.aws_ssm_parameter.ecs_ami.insecure_value
   vpc_security_group_ids = var.security_group_ids
   update_default_version = true
 

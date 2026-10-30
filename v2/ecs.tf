@@ -119,6 +119,8 @@ module "ecs_asg" {
   cluster_name = module.ecs_cluster[each.value.stage].cluster_name
   role         = each.value.role
   purchase     = each.value.purchase
+  # dev만 최신 ECS AMI를 따른다. stg·prod는 ecs_pinned_amis의 값으로 고정한다 (교체는 별도 승인)
+  ami_id = each.value.stage == "dev" ? null : var.ecs_pinned_amis[each.value.stage]
 
   instance_types        = each.value.instance_types
   instance_requirements = each.value.instance_requirements
@@ -194,10 +196,10 @@ module "ecs_service" {
     each.value.environment,
     contains(keys(local.monitoring_metrics_endpoints), each.value.service) ? lookup(local.otlp_push_environment, each.value.stage, {}) : {},
   )
-  secrets                    = each.value.secrets
-  entry_point                = contains(local.be_container_services, each.value.service) ? local.be_container_entry_point : null
-  command                    = contains(local.be_container_services, each.value.service) ? local.be_container_command : null
-  log_retention_days         = each.value.log_retention_days
+  secrets            = each.value.secrets
+  entry_point        = contains(local.be_container_services, each.value.service) ? local.be_container_entry_point : null
+  command            = contains(local.be_container_services, each.value.service) ? local.be_container_command : null
+  log_retention_days = each.value.log_retention_days
 
   capacity_provider_strategy = [
     for s in each.value.strategy : {
