@@ -956,6 +956,19 @@ variable "otlp_push_stages" {
   }
 }
 
+variable "ecs_pinned_amis" {
+  description = <<-EOT
+    stg·prod ECS 호스트 AMI 고정값 (스테이지 → AMI ID). dev는 여기 없이 SSM 최신 AMI를 따른다.
+    값을 바꾸면 해당 스테이지의 ASG launch template이 바뀌고 instance refresh로 전 호스트가 한 대씩 교체된다. 교체는 별도 승인 후에만 바꾼다.
+    현재 값은 2026-10-30 plan 기준으로 상태에 있던 AMI다.
+  EOT
+  type        = map(string)
+  default = {
+    stg  = "ami-03fe595bfa08c00b8"
+    prod = "ami-03fe595bfa08c00b8"
+  }
+}
+
 variable "monitoring_alloy_stages" {
   description = <<-EOT
     Alloy DAEMON을 띄워 Loki로 로그를 보낼 ECS 스테이지. ecs_stages에 없는 값은 무시한다.
