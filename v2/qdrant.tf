@@ -2,13 +2,16 @@
 # Qdrant (AI 서버 모니터링 봇의 벡터 검색 인덱스) — issues/ai-qdrant-setup.md
 #
 #   구성 : 단일 EC2 + Docker(qdrant/qdrant:<고정 태그>) + 별도 EBS, 인스턴스는 var.qdrant_instances로 선언
-#          기본값 = nonprod(dev·stg 공용) 1대. prod는 아직 두지 않는다(qdrant_instances·ai_monitor_stages에 추가하면 생성). 컬렉션은 앱이 <stage>_knowledge·<stage>_chat으로 직접 만든다.
-#   원본 아님 : 검색 전용 인덱스. 유실돼도 앱이 MySQL 원본으로 재적재한다 → 장애 시 API 영향 없음.
+#          기본값 = nonprod(dev·stg 공용) 1대. prod는 아직 두지 않는다(qdrant_instances·ai_monitor_stages에 추가하면 생성). 컬렉션은 앱이 <stage>_knowledge·<stage>_docs·<stage>_chat으로 직접 만든다.
+#   원본 저장소 : knowledge·docs는 Qdrant가 원본이다(초기 지식·저장소 문서는 자동 재적재되지만 대화로 저장한 지식·관리자가
+#          올린 문서는 스냅샷으로만 복구). chat만 MySQL 원본이라 자동 재적재된다. 그래서 스냅샷과 prevent_destroy는 필수다.
+#          장애 시 API 영향은 없다(지식은 이미지 안 seed.json으로 대체, 문서·대화 검색은 대체 경로 없음).
+#          dev·stg가 볼륨을 공유하므로 볼륨을 복구하면 두 스테이지가 함께 되돌아간다.
 #   접근 : TCP 6333만, 같은 스테이지 fastapi 태스크 SG에서만. 6334(gRPC)·퍼블릭 IP·SSH 없음 (접속은 SSM Session Manager).
 #   인증 : API 키 필수. 키는 /<config_path_prefix>/<stage>/ai/AI_QDRANT_API_KEY (ssm.tf, 값은 콘솔 입력)를
 #          인스턴스가 부팅 시 읽는다. 인스턴스가 여러 스테이지를 받으면 "첫 번째 스테이지"의 파라미터가 원본이고
 #          나머지 스테이지 파라미터에는 같은 값을 넣는다. prod는 별도 인스턴스·별도 키라서 dev·stg 키가 유출돼도 prod 컬렉션에 닿지 않는다.
-#   백업 : EBS 일일 스냅샷(DLM, 7일). 없어도 앱이 MySQL로 재적재한다.
+#   백업 : EBS 일일 스냅샷(DLM, 기본 14일, 끌 수 없음).
 #
 #   적용 순서 : terraform apply → 콘솔에서 키 입력(원본 스테이지) → 나머지 스테이지 파라미터에 같은 값 입력
 #               → 호스트에서 qdrant-apply (SSM Run Command) → AI_QDRANT_URL 입력(output qdrant_urls) → fastapi 재배포
@@ -232,7 +235,7 @@ resource "aws_volume_attachment" "qdrant_data" {
 }
 
 # -----------------------------------------------------------------------------
-# 일일 스냅샷 (선택 사항이지만 재적재 시간·임베딩 비용을 줄여 준다)
+# 일일 스냅샷 (필수: knowledge·docs의 대화/관리자 입력분은 스냅샷으로만 복구된다)
 # -----------------------------------------------------------------------------
 
 data "aws_iam_policy_document" "dlm_assume" {
@@ -247,7 +250,7 @@ data "aws_iam_policy_document" "dlm_assume" {
 }
 
 resource "aws_iam_role" "qdrant_dlm" {
-  count = length(local.qdrant_active) > 0 && var.qdrant_snapshot_retain_days > 0 ? 1 : 0
+  count = length(local.qdrant_active) > 0 ? 1 : 0
 
   name               = "${var.project_name}-qdrant-dlm"
   assume_role_policy = data.aws_iam_policy_document.dlm_assume.json

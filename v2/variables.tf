@@ -1207,14 +1207,19 @@ variable "qdrant_instances" {
   }
 }
 
-variable "qdrant_snapshot_retain_days" {
-  description = "Qdrant 데이터 EBS 일일 스냅샷 보관 일수. 0이면 스냅샷 정책을 만들지 않는다 (없어도 앱이 MySQL로 재적재한다)."
-  type        = number
-  default     = 7
-}
 variable "ai_monitor_stages" {
   description = "AI 모니터링 봇용 SSM 파라미터(AI_DB_URL·AI_QDRANT_URL·AI_QDRANT_API_KEY·TELEGRAM_BOT_TOKEN)를 만들고 fastapi 태스크에 주입할 스테이지. prod는 Qdrant·AI DB를 준비한 뒤 추가한다."
   type        = list(string)
   default     = ["dev", "stg"]
 }
 
+variable "qdrant_snapshot_retain_days" {
+  description = "Qdrant 데이터 EBS 일일 스냅샷 보관 일수. knowledge·docs 일부는 Qdrant가 원본이라 스냅샷이 유일한 복구 수단이므로 끌 수 없다."
+  type        = number
+  default     = 14
+
+  validation {
+    condition     = var.qdrant_snapshot_retain_days >= 1
+    error_message = "qdrant_snapshot_retain_days는 1 이상이어야 한다 (스냅샷은 필수)."
+  }
+}
