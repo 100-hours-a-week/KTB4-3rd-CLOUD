@@ -94,6 +94,16 @@ locals {
   # ECS 서비스 → 주입받을 그룹. rest·websocket은 같은 backend 값을 공유한다.
   ecs_service_param_groups = {
     rest      = ["backend"]
+
+      # 서버 모니터링 봇 (issues/ai-qdrant-setup.md)
+      #   AI_DB_URL        : mysql://ai_<stage>:<비밀번호>@<RDS 엔드포인트>:3306/ai_<stage>?ssl=verify (DB 이름이 ai_<stage>여야 모니터가 켜진다)
+      #   AI_QDRANT_URL    : qdrant.tf output qdrant_urls 값 (http://<사설 IP>:6333)
+      #   AI_QDRANT_API_KEY: qdrant.tf 인스턴스가 부팅 시 읽는 원본. 한 인스턴스가 받는 스테이지끼리 같은 값을 넣는다
+      #   TELEGRAM_BOT_TOKEN: 동시에 한 스테이지만 활성화 (dev → stg → prod 순으로 검증 후 prod 고정)
+      "AI_DB_URL",
+      "AI_QDRANT_URL",
+      "AI_QDRANT_API_KEY",
+      "TELEGRAM_BOT_TOKEN",
     websocket = ["backend"]
     frontend  = ["frontend"]
     fastapi   = ["ai"]

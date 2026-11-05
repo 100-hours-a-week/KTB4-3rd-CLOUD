@@ -1157,3 +1157,64 @@ variable "ai_log_reader_group_name" {
 }
 
 
+
+# -----------------------------------------------------------------------------
+# Qdrant (qdrant.tf) — issues/ai-qdrant-setup.md
+# -----------------------------------------------------------------------------
+
+variable "qdrant_version" {
+  description = "Qdrant 서버 이미지 태그. 앱의 qdrant-client(1.20.0 고정)와 마이너 버전 차이가 1 이하여야 한다. latest는 쓰지 않는다."
+  type        = string
+  default     = "v1.20.0"
+
+  validation {
+    condition     = can(regex("^v\\d+\\.\\d+\\.\\d+$", var.qdrant_version))
+    error_message = "qdrant_version은 v1.20.0 같은 고정 태그여야 한다."
+  }
+}
+
+variable "qdrant_instances" {
+  description = <<-EOT
+    Qdrant EC2 인스턴스. 키 = 인스턴스 이름, stages = 이 인스턴스를 쓰는 스테이지(컬렉션 접두사로 분리),
+    subnet_key = NAT 경로가 있는 private 워크로드 서브넷(app·dev). private_ip를 주면 고정(서브넷 CIDR 안, ECS ENI와 겹치지 않는 값).
+    ecs_stages에 없는 스테이지는 무시한다. 비우면({}) 아무것도 만들지 않는다.
+  EOT
+  type = map(object({
+    stages        = list(string)
+    subnet_key    = string
+    instance_type = optional(string, "t3.small")
+    data_gib      = optional(number, 20)
+    private_ip    = optional(string)
+  }))
+  default = {
+    nonprod = { stages = ["dev", "stg"], subnet_key = "dev" }
+  }
+
+  validation {
+    condition     = alltrue([for i in values(var.qdrant_instances) : alltrue([for s in i.stages : contains(["dev", "stg", "prod"], s)]) && length(i.stages) > 0])
+    error_message = "qdrant_instances.stages는 dev·stg·prod 중 하나 이상이어야 한다."
+  }
+
+  validation {
+    condition     = length(flatten([for i in values(var.qdrant_instances) : i.stages])) == length(distinct(flatten([for i in values(var.qdrant_instances) : i.stages])))
+    error_message = "한 스테이지는 하나의 Qdrant 인스턴스에만 속할 수 있다."
+  }
+
+  validation {
+    condition     = alltrue([for i in values(var.qdrant_instances) : contains(["app", "dev"], i.subnet_key) && i.data_gib >= 10])
+    error_message = "subnet_key는 app 또는 dev, data_gib는 10 이상이어야 한다."
+    # prod는 아직 추가하지 않는다. 필요해지면 prod = { stages = ["prod"], subnet_key = "app" }을 더하고 ai_monitor_stages에도 prod를 넣는다.
+  }
+}
+
+variable "qdrant_snapshot_retain_days" {
+  description = "Qdrant 데이터 EBS 일일 스냅샷 보관 일수. 0이면 스냅샷 정책을 만들지 않는다 (없어도 앱이 MySQL로 재적재한다)."
+  type        = number
+  default     = 7
+}
+variable "ai_monitor_stages" {
+  description = "AI 모니터링 봇용 SSM 파라미터(AI_DB_URL·AI_QDRANT_URL·AI_QDRANT_API_KEY·TELEGRAM_BOT_TOKEN)를 만들고 fastapi 태스크에 주입할 스테이지. prod는 Qdrant·AI DB를 준비한 뒤 추가한다."
+  type        = list(string)
+  default     = ["dev", "stg"]
+}
+
