@@ -321,11 +321,12 @@ locals {
           instance_types        = []
           instance_requirements = local.ecs_spot_requirements.dev_shared
           min                   = 0
-          max                   = 2
+          # dev MSK를 켜면 kafka-init 자리가 필요해 1대 늘린다 (기존 서비스가 2대를 모두 쓴다)
+          max = contains(var.msk_stages, "dev") ? 3 : 2
         }
       }
 
-      # t3.medium은 ENI 3개 → 호스트당 awsvpc 태스크 2개. 4개 서비스 = 2대(=max)라
+      # t3.medium은 ENI 3개 → 호스트당 awsvpc 태스크 2개. 4개 서비스 = 2대라
       # 롤링 여유가 없으므로 dev는 기존 태스크를 먼저 내리고 새 태스크를 띄운다 (0% / 100%).
       services = {
         for svc in ["rest", "websocket", "frontend", "fastapi"] : svc => {

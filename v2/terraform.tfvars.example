@@ -188,3 +188,8 @@ monitoring_alloy_memory = {
 #   대상 스테이지는 alert_stages. SSM DISCORD_WEBHOOK_INCIDENT·DISCORD_WEBHOOK_ALERTS 값을 넣은 뒤 켠다
 monitoring_grafana_alerting_enabled = false
 
+# MSK (msk.tf) — issues/kafka-msk-setup.md. 비우면 아무것도 만들지 않는다.
+#   msk_third_subnet : availability_zones와 다른 AZ. CIDR은 aws ec2 describe-subnets로 미사용을 확인한 뒤 넣는다
+#   msk_instance_types 기본값 : stg kafka.m7g.large. dev를 추가하려면 타입도 지정한다 (kafka.t3.small 미지원)
+# msk_stages       = ["stg"]
+# msk_third_subnet = { cidr = "10.20.102.0/24", az = "ap-northeast-2b" }

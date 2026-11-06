@@ -69,6 +69,8 @@ locals {
             }]
           ])...),
           { for key, arn in try(local.broker_secrets[stage], {}) : key => arn if contains(local.data_client_services, svc) },
+          # try()는 값이 미확정이면 결과 전체를 미확정으로 만들어 Kafka를 안 쓰는 서비스까지 교체하므로 lookup을 쓴다
+          { for key, arn in lookup(local.msk_secrets, stage, {}) : key => arn if contains(local.msk_client_services, svc) },
         )
       })
       if contains(var.ecs_services, svc) && try(var.ecs_container_images[stage][svc], null) != null

@@ -1,0 +1,37 @@
+set -eu
+
+BIN=/opt/kafka/bin
+BS="$KAFKA_BOOTSTRAP_SERVERS"
+
+ensure_topic() {
+  topic="$1"
+  partitions="$2"
+  configs="$3"
+
+  config_args=""
+  for pair in $(echo "$configs" | tr ',' ' '); do
+    config_args="$config_args --config $pair"
+  done
+
+  "$BIN/kafka-topics.sh" --bootstrap-server "$BS" --create --if-not-exists \
+    --topic "$topic" --partitions "$partitions" --replication-factor ${replication_factor} $config_args
+
+  "$BIN/kafka-configs.sh" --bootstrap-server "$BS" --alter \
+    --entity-type topics --entity-name "$topic" --add-config "$configs"
+
+  summary="$("$BIN/kafka-topics.sh" --bootstrap-server "$BS" --describe --topic "$topic" | head -n 1)"
+  actual_partitions="$(echo "$summary" | sed -n 's/.*PartitionCount: *\([0-9]*\).*/\1/p')"
+  actual_replication="$(echo "$summary" | sed -n 's/.*ReplicationFactor: *\([0-9]*\).*/\1/p')"
+
+  if [ "$actual_partitions" != "$partitions" ] || [ "$actual_replication" != "${replication_factor}" ]; then
+    echo "MISMATCH $topic: partitions=$actual_partitions (want $partitions), rf=$actual_replication (want ${replication_factor})" >&2
+    exit 1
+  fi
+  echo "OK $topic partitions=$actual_partitions rf=$actual_replication $configs"
+}
+
+%{ for t in topics ~}
+ensure_topic "${t.name}" "${t.partitions}" "${t.config}"
+%{ endfor ~}
+
+echo "kafka-init done: ${length(topics)} topics"

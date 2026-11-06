@@ -1169,4 +1169,95 @@ variable "ai_log_reader_group_name" {
   default     = "moyeota-ai"
 }
 
+# -----------------------------------------------------------------------------
+# MSK (msk.tf) — issues/kafka-msk-setup.md
+# -----------------------------------------------------------------------------
 
+variable "msk_stages" {
+  description = "MSK 클러스터를 만들 스테이지. ecs_stages에 없는 값은 무시한다. 비우면 아무것도 만들지 않는다."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for s in var.msk_stages : contains(["dev", "stg", "prod"], s)])
+    error_message = "msk_stages may only contain dev, stg, prod."
+  }
+}
+
+variable "msk_third_subnet" {
+  description = "MSK 3AZ 구성용 데이터 서브넷. availability_zones와 다른 AZ, 공유 VPC에서 쓰지 않는 /24 CIDR이어야 한다."
+  type = object({
+    cidr = string
+    az   = string
+  })
+  default = null
+
+  validation {
+    condition     = var.msk_third_subnet == null || can(regex("/24$", var.msk_third_subnet.cidr))
+    error_message = "msk_third_subnet.cidr must be a /24 CIDR."
+  }
+
+  validation {
+    condition     = var.msk_third_subnet == null || !contains(var.availability_zones, var.msk_third_subnet.az)
+    error_message = "msk_third_subnet.az must differ from availability_zones."
+  }
+}
+
+variable "msk_kafka_version" {
+  description = "MSK Kafka 버전 (aws kafka list-kafka-versions 값). Standard 브로커는 4.2를 지원하지 않아 4.1.x.kraft를 쓴다 (클라이언트 4.2.1과의 호환은 issues/kafka-msk-setup.md 참고)."
+  type        = string
+  default     = "4.1.x.kraft"
+}
+
+variable "msk_instance_types" {
+  description = "스테이지 → MSK 브로커 인스턴스 타입. 4.1.x.kraft Standard는 kafka.t3.small을 지원하지 않는다 (CreateCluster 400, 2026-11-06). 최소 kafka.m5.large·kafka.m7g.large."
+  type        = map(string)
+  default = {
+    stg = "kafka.m7g.large"
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.msk_instance_types) : startswith(t, "kafka.")])
+    error_message = "msk_instance_types values must start with kafka."
+  }
+}
+
+variable "msk_volume_gib" {
+  description = "브로커당 시작 EBS 크기(GiB). 줄일 수 없다."
+  type        = number
+  default     = 100
+}
+
+variable "msk_storage_max_gib" {
+  description = "브로커당 스토리지 오토스케일링 상한(GiB). 늘어난 스토리지는 줄일 수 없으므로 비용 상한으로 정한다."
+  type        = number
+  default     = 500
+
+  validation {
+    condition     = var.msk_storage_max_gib >= var.msk_volume_gib
+    error_message = "msk_storage_max_gib must be >= msk_volume_gib."
+  }
+}
+
+variable "msk_enhanced_monitoring" {
+  description = "CloudWatch 지표 수준. 파티션별 lag(OffsetLag)을 보려면 PER_TOPIC_PER_PARTITION이 필요하다. DEFAULT 외에는 지표 비용이 든다."
+  type        = string
+  default     = "PER_TOPIC_PER_PARTITION"
+
+  validation {
+    condition     = contains(["DEFAULT", "PER_BROKER", "PER_TOPIC_PER_BROKER", "PER_TOPIC_PER_PARTITION"], var.msk_enhanced_monitoring)
+    error_message = "msk_enhanced_monitoring must be DEFAULT, PER_BROKER, PER_TOPIC_PER_BROKER or PER_TOPIC_PER_PARTITION."
+  }
+}
+
+variable "msk_log_retention_days" {
+  description = "MSK 브로커 로그·kafka-init 로그 보존 기간(일)"
+  type        = number
+  default     = 30
+}
+
+variable "msk_admin_image" {
+  description = "kafka-init 태스크 이미지. 브로커와 같은 계열로 태그를 고정하고 latest를 쓰지 않는다."
+  type        = string
+  default     = "apache/kafka:4.1.2"
+}

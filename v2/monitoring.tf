@@ -147,7 +147,8 @@ module "monitoring" {
   grafana_alert_stages      = var.monitoring_grafana_alerting_enabled ? var.alert_stages : []
 
   # 이관 리허설 (migration.tf). migration_rehearsal_enabled = false면 모두 비어 있다
-  static_scrape_targets = local.migration_scrape_targets
+  # MSK 브로커 exporter (msk.tf). msk_stages가 비어 있으면 대상이 없다
+  static_scrape_targets = concat(local.migration_scrape_targets, local.msk_scrape_targets)
   mysql_datasources     = local.migration_mysql_datasources
   extra_dashboards      = local.migration_dashboards
 
