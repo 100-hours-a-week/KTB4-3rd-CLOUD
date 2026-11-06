@@ -88,22 +88,29 @@ locals {
       # OpenAI API 키
       "OPENAI_API_KEY_1",
       "OPENAI_API_KEY_2",
-    ]
-  }
-
-  # ECS 서비스 → 주입받을 그룹. rest·websocket은 같은 backend 값을 공유한다.
-  ecs_service_param_groups = {
-    rest      = ["backend"]
 
       # 서버 모니터링 봇 (issues/ai-qdrant-setup.md)
       #   AI_DB_URL        : mysql://ai_<stage>:<비밀번호>@<RDS 엔드포인트>:3306/ai_<stage>?ssl=verify (DB 이름이 ai_<stage>여야 모니터가 켜진다)
       #   AI_QDRANT_URL    : qdrant.tf output qdrant_urls 값 (http://<사설 IP>:6333)
       #   AI_QDRANT_API_KEY: qdrant.tf 인스턴스가 부팅 시 읽는 원본. 한 인스턴스가 받는 스테이지끼리 같은 값을 넣는다
       #   TELEGRAM_BOT_TOKEN: 동시에 한 스테이지만 활성화 (dev → stg → prod 순으로 검증 후 prod 고정)
+      #   Admin_Telegram_ID·Admin_Discord_ID : 봇 관리자 사용자 ID (명령 권한 확인용)
+      #   DISCORD_BOT_TOKEN·DISCORD_CHANNEL_ID : Discord 알림 연동 (태스크에서 discord.com·gateway.discord.gg·cdn.discordapp.com 443 필요)
+      #   봇 전용 키는 CHANGE_ME로 배포돼도 서비스에 영향이 없다. 판독 서비스 키(OPENAI_API_KEY_*)에는 CHANGE_ME를 넣지 않는다.
       "AI_DB_URL",
       "AI_QDRANT_URL",
       "AI_QDRANT_API_KEY",
       "TELEGRAM_BOT_TOKEN",
+      "Admin_Telegram_ID",
+      "DISCORD_BOT_TOKEN",
+      "DISCORD_CHANNEL_ID",
+      "Admin_Discord_ID",
+    ]
+  }
+
+  # ECS 서비스 → 주입받을 그룹. rest·websocket은 같은 backend 값을 공유한다.
+  ecs_service_param_groups = {
+    rest      = ["backend"]
     websocket = ["backend"]
     frontend  = ["frontend"]
     fastapi   = ["ai"]
