@@ -45,7 +45,7 @@ locals {
 
   # ALB에 붙이지 않는 내부 전용 서비스. 같은 스테이지 서비스가 Service Connect(http://<name>:<port>)로만 호출한다.
   #   fastapi : 호출하는 곳이 BE뿐이라 외부 노출하지 않는다 (/ocr/* 경로 제거)
-  ecs_internal_only_services = ["fastapi"]
+  ecs_internal_only_services = ["fastapi", "worker"]
 
   # 스테이지 × 서비스 → "prod-rest" 같은 키로 펼친다. 이미지가 지정된 서비스만 만든다.
   ecs_service_instances = merge([
@@ -201,6 +201,7 @@ module "ecs_service" {
   secrets            = each.value.secrets
   entry_point        = contains(local.be_container_services, each.value.service) ? local.be_container_entry_point : null
   command            = contains(local.be_container_services, each.value.service) ? local.be_container_command : null
+  health_check       = lookup(local.ecs_container_health_checks, each.value.service, null)
   log_retention_days = each.value.log_retention_days
 
   capacity_provider_strategy = [

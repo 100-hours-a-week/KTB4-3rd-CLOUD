@@ -97,6 +97,7 @@ locals {
     websocket = ["backend"]
     frontend  = ["frontend"]
     fastapi   = ["ai"]
+    worker    = ["backend"]
   }
 
   # "dev/backend/DB_PASSWORD" → { stage, group, key }
