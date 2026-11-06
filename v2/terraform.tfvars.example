@@ -193,3 +193,6 @@ monitoring_grafana_alerting_enabled = false
 #   msk_instance_types 기본값 : stg kafka.m7g.large. dev를 추가하려면 타입도 지정한다 (kafka.t3.small 미지원)
 # msk_stages       = ["stg"]
 # msk_third_subnet = { cidr = "10.20.102.0/24", az = "ap-northeast-2b" }
+
+# dev Kafka EC2 1노드 (kafka_dev.tf) — dev 스케줄로 시작·중지. dev를 msk_stages에 함께 넣지 않는다
+# dev_kafka_enabled = true
