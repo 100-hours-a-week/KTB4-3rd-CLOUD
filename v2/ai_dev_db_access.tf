@@ -15,6 +15,14 @@ locals {
   ai_dev_db_enabled   = contains(keys(local.ecs_service_instances), "dev-fastapi") && contains(keys(local.ecs_stages), "dev")
   ai_dev_ddl_doc_name = "${var.project_name}-dev-ai-mysql-ddl"
   ai_dev_db_pass_file = "/opt/${var.project_name}/ai-dev-db.pass"
+  ai_dev_shell_doc    = "${var.project_name}-dev-ai-mysql-shell"
+
+  # mysql 클라이언트는 기존 mysql 컨테이너 "안"이 아니라 같은 이미지의 일회용 컨테이너(--network host)에서 실행한다.
+  #   컨테이너 안에서 실행하면 클라이언트의 \! (쉘 실행)으로 컨테이너 환경의 MYSQL_ROOT_PASSWORD가 노출돼 ai_dev 제한이 풀린다.
+  #   일회용 컨테이너는 환경에 ai_dev 비밀번호(MYSQL_PWD)뿐이고 호스트 볼륨도 붙지 않는다.
+  #   SSM 문서에서 {{ }}는 파라미터 치환이라 docker inspect --format 대신 python으로 이미지 이름을 읽는다.
+  ai_dev_mysql_image_expr = "$(docker inspect mysql | python3 -c \"import sys,json;print(json.load(sys.stdin)[0]['Config']['Image'])\")"
+  ai_dev_mysql_client     = "docker run --rm %s --network host -e MYSQL_PWD=\"$(cat ${local.ai_dev_db_pass_file})\" \"${local.ai_dev_mysql_image_expr}\" mysql -h127.0.0.1 -uai_dev ai_dev"
 }
 
 # -----------------------------------------------------------------------------
@@ -64,10 +72,42 @@ resource "aws_ssm_document" "ai_dev_mysql_ddl" {
           "[ -s \"$f\" ] || { echo \"$f 없음: 호스트에 ai_dev 비밀번호 파일을 먼저 만든다\" >&2; exit 1; }",
           "trap 'rm -f /tmp/ai-dev-ddl.sql' EXIT",
           "echo '{{ sqlBase64 }}' | base64 -d > /tmp/ai-dev-ddl.sql",
-          "docker exec -i -e MYSQL_PWD=\"$(cat \"$f\")\" mysql mysql -uai_dev ai_dev < /tmp/ai-dev-ddl.sql",
+          "${format(local.ai_dev_mysql_client, "-i")} < /tmp/ai-dev-ddl.sql",
         ]
       }
     }]
+  })
+
+  tags = {
+    Stage = "dev"
+    Group = "ai"
+  }
+}
+
+# -----------------------------------------------------------------------------
+# 2-1) 대화형 mysql 세션 문서 (Session Manager) — ai_dev 계정 · ai_dev DB 고정
+#   쉘이 아니라 mysql 클라이언트만 실행된다. 접속:
+#     aws ssm start-session --target <dev EC2> --document-name <문서 이름>
+# -----------------------------------------------------------------------------
+
+resource "aws_ssm_document" "ai_dev_mysql_shell" {
+  count = local.ai_dev_db_enabled ? 1 : 0
+
+  name          = local.ai_dev_shell_doc
+  document_type = "Session"
+  target_type   = "/AWS::EC2::Instance"
+
+  content = jsonencode({
+    schemaVersion = "1.0"
+    description   = "dev ai_dev DB 대화형 mysql 세션 (ai_dev 계정, ai_dev DB 한정)"
+    sessionType   = "InteractiveCommands"
+    parameters    = {}
+    properties = {
+      linux = {
+        commands      = format(local.ai_dev_mysql_client, "-it")
+        runAsElevated = true
+      }
+    }
   })
 
   tags = {
@@ -110,6 +150,26 @@ data "aws_iam_policy_document" "ai_dev_ddl" {
       "arn:${local.fastapi_log_partition}:ec2:${var.aws_region}:${local.fastapi_log_account_id}:instance/${aws_instance.host["dev"].id}",
     ]
   }
+
+  # 대화형 세션 — 반드시 위 커스텀 Session 문서만. AWS 기본 문서(SSM-SessionManagerRunShell, AWS-StartInteractiveCommand 등)는
+  # 호스트 쉘·docker exec(root)가 열리므로 허용하지 않는다.
+  statement {
+    sid     = "StartAiDevMysqlSession"
+    actions = ["ssm:StartSession"]
+    resources = [
+      "arn:${local.fastapi_log_partition}:ssm:${var.aws_region}:${local.fastapi_log_account_id}:document/${local.ai_dev_shell_doc}",
+      "arn:${local.fastapi_log_partition}:ec2:${var.aws_region}:${local.fastapi_log_account_id}:instance/${aws_instance.host["dev"].id}",
+    ]
+  }
+
+  # 본인 세션만 종료·재개
+  statement {
+    sid     = "ManageOwnSessions"
+    actions = ["ssm:TerminateSession", "ssm:ResumeSession"]
+    resources = [
+      "arn:${local.fastapi_log_partition}:ssm:*:${local.fastapi_log_account_id}:session/$${aws:username}-*",
+    ]
+  }
 }
 
 resource "aws_iam_policy" "ai_dev_ddl" {
@@ -131,6 +191,7 @@ output "ai_dev_ddl_document" {
   description = "AI 파트가 dev ai_dev DB에 DDL을 적용할 때 쓰는 SSM Run Command 문서 이름과 대상 인스턴스"
   value = local.ai_dev_db_enabled ? {
     document    = local.ai_dev_ddl_doc_name
+    shell_doc   = local.ai_dev_shell_doc
     instance_id = aws_instance.host["dev"].id
     mysql_host  = aws_instance.host["dev"].private_ip
   } : null
