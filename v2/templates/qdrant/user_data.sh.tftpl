@@ -14,7 +14,7 @@ APP_DIR="/opt/qdrant"
 
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y xfsprogs docker.io snapd
+apt-get install -y xfsprogs docker.io docker-compose-v2 snapd
 systemctl enable --now docker
 systemctl enable --now snapd.socket || true
 systemctl enable --now amazon-ssm-agent || true
