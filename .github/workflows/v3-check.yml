@@ -1,0 +1,39 @@
+name: V3 Check
+
+# 필수 검사로 지정해도 V3를 건드리지 않는 PR이 대기 상태로 남지 않도록 paths 필터를 두지 않는다.
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v3-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: V3 validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: 1.16.2
+          terraform_wrapper: false
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v5.0.1
+        with:
+          version: v3.22.1
+
+      - name: Validate Terraform and Helm
+        run: bash v3/scripts/validate.sh
