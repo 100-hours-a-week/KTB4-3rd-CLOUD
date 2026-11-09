@@ -64,7 +64,7 @@ locals {
         secrets = merge(
           merge(flatten([
             for group in local.ecs_service_param_groups[svc] : [{
-              for key in local.ssm_param_keys[group] :
+              for key in local.ssm_stage_param_keys[stage][group] :
               key => aws_ssm_parameter.app["${stage}/${group}/${key}"].arn
             }]
           ])...),

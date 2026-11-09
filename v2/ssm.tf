@@ -94,13 +94,13 @@ locals {
       #   AI_QDRANT_URL    : qdrant.tf output qdrant_urls 값 (http://<사설 IP>:6333)
       #   AI_QDRANT_API_KEY: qdrant.tf 인스턴스가 부팅 시 읽는 원본. 한 인스턴스가 받는 스테이지끼리 같은 값을 넣는다
       #   TELEGRAM_BOT_TOKEN: 동시에 한 스테이지만 활성화 (dev → stg → prod 순으로 검증 후 prod 고정)
-      #   Admin_Telegram_ID·Admin_Discord_ID : 봇 관리자 사용자 ID (명령 권한 확인용)
-      #   DISCORD_BOT_TOKEN·DISCORD_CHANNEL_ID : Discord 알림 연동 (태스크에서 discord.com·gateway.discord.gg·cdn.discordapp.com 443 필요)
-      #   봇 전용 키는 CHANGE_ME로 배포돼도 서비스에 영향이 없다. 판독 서비스 키(OPENAI_API_KEY_*)에는 CHANGE_ME를 넣지 않는다.
       "AI_DB_URL",
       "AI_QDRANT_URL",
       "AI_QDRANT_API_KEY",
       "TELEGRAM_BOT_TOKEN",
+      #   Admin_Telegram_ID·Admin_Discord_ID : 봇 관리자 사용자 ID (명령 권한 확인용)
+      #   DISCORD_BOT_TOKEN·DISCORD_CHANNEL_ID : Discord 알림 연동 (태스크에서 discord.com·gateway.discord.gg·cdn.discordapp.com 443 필요)
+      #   봇 전용 키는 CHANGE_ME로 배포돼도 서비스에 영향이 없다. 판독 서비스 키(OPENAI_API_KEY_*)에는 CHANGE_ME를 넣지 않는다.
       "Admin_Telegram_ID",
       "DISCORD_BOT_TOKEN",
       "DISCORD_CHANNEL_ID",
@@ -116,10 +116,33 @@ locals {
     fastapi   = ["ai"]
   }
 
+  # 일부 스테이지에만 두는 키 → 스테이지 목록. 목록에 없는 스테이지는 파라미터도, 태스크 secrets 주입도 만들지 않는다.
+  ssm_stage_scoped_keys = {
+    # 서버 모니터링 봇 (qdrant.tf) — prod는 ai_monitor_stages에 넣을 때 추가
+    AI_DB_URL          = var.ai_monitor_stages
+    AI_QDRANT_URL      = var.ai_monitor_stages
+    AI_QDRANT_API_KEY  = var.ai_monitor_stages
+    TELEGRAM_BOT_TOKEN = var.ai_monitor_stages
+    Admin_Telegram_ID  = var.ai_monitor_stages
+    DISCORD_BOT_TOKEN  = var.ai_monitor_stages
+    DISCORD_CHANNEL_ID = var.ai_monitor_stages
+    Admin_Discord_ID   = var.ai_monitor_stages
+  }
+
+  # 스테이지 → 그룹 → 실제로 만드는 키 (ecs.tf secrets도 이 값을 쓴다)
+  ssm_stage_param_keys = {
+    for stage in keys(local.ecs_stages) : stage => {
+      for group, param_keys in local.ssm_param_keys : group => [
+        for key in param_keys : key
+        if !contains(keys(local.ssm_stage_scoped_keys), key) || contains(local.ssm_stage_scoped_keys[key], stage)
+      ]
+    }
+  }
+
   # "dev/backend/DB_PASSWORD" → { stage, group, key }
   ssm_params = merge(flatten([
     for stage in keys(local.ecs_stages) : [
-      for group, param_keys in local.ssm_param_keys : {
+      for group, param_keys in local.ssm_stage_param_keys[stage] : {
         for key in param_keys : "${stage}/${group}/${key}" => {
           stage = stage
           group = group

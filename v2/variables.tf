@@ -1187,6 +1187,7 @@ variable "qdrant_instances" {
     private_ip    = optional(string)
   }))
   default = {
+    # prod는 아직 추가하지 않는다. 필요해지면 prod = { stages = ["prod"], subnet_key = "app" }을 더하고 ai_monitor_stages에도 prod를 넣는다.
     nonprod = { stages = ["dev", "stg"], subnet_key = "dev" }
   }
 
@@ -1203,7 +1204,6 @@ variable "qdrant_instances" {
   validation {
     condition     = alltrue([for i in values(var.qdrant_instances) : contains(["app", "dev"], i.subnet_key) && i.data_gib >= 10])
     error_message = "subnet_key는 app 또는 dev, data_gib는 10 이상이어야 한다."
-    # prod는 아직 추가하지 않는다. 필요해지면 prod = { stages = ["prod"], subnet_key = "app" }을 더하고 ai_monitor_stages에도 prod를 넣는다.
   }
 }
 
