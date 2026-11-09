@@ -77,6 +77,8 @@ locals {
     { for k, v in { secrets = [for name, arn in var.secrets : { name = name, valueFrom = arn }] } : k => v if length(var.secrets) > 0 },
     # 이미지 ENTRYPOINT/CMD 재정의 (지정한 서비스만). CD는 family 최신 revision을 기준으로 이미지만 바꾸므로 이 값을 이어받는다
     { for k, v in { entryPoint = var.entry_point, command = var.command } : k => v if v != null },
+    # ALB가 없는 서비스의 컨테이너 헬스체크 (지정한 서비스만)
+    { for k, v in { healthCheck = var.health_check } : k => v if v != null },
   )
 }
 

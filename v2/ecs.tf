@@ -45,7 +45,7 @@ locals {
 
   # ALB에 붙이지 않는 내부 전용 서비스. 같은 스테이지 서비스가 Service Connect(http://<name>:<port>)로만 호출한다.
   #   fastapi : 호출하는 곳이 BE뿐이라 외부 노출하지 않는다 (/ocr/* 경로 제거)
-  ecs_internal_only_services = ["fastapi"]
+  ecs_internal_only_services = ["fastapi", "worker", "matching"]
 
   # 스테이지 × 서비스 → "prod-rest" 같은 키로 펼친다. 이미지가 지정된 서비스만 만든다.
   ecs_service_instances = merge([
@@ -64,11 +64,13 @@ locals {
         secrets = merge(
           merge(flatten([
             for group in local.ecs_service_param_groups[svc] : [{
-              for key in local.ssm_param_keys[group] :
+              for key in local.ssm_stage_param_keys[stage][group] :
               key => aws_ssm_parameter.app["${stage}/${group}/${key}"].arn
             }]
           ])...),
           { for key, arn in try(local.broker_secrets[stage], {}) : key => arn if contains(local.data_client_services, svc) },
+          # try()는 값이 미확정이면 결과 전체를 미확정으로 만들어 Kafka를 안 쓰는 서비스까지 교체하므로 lookup을 쓴다
+          { for key, arn in lookup(local.kafka_secrets, stage, {}) : key => arn if contains(local.msk_client_services, svc) },
         )
       })
       if contains(var.ecs_services, svc) && try(var.ecs_container_images[stage][svc], null) != null
@@ -199,6 +201,7 @@ module "ecs_service" {
   secrets            = each.value.secrets
   entry_point        = contains(local.be_container_services, each.value.service) ? local.be_container_entry_point : null
   command            = contains(local.be_container_services, each.value.service) ? local.be_container_command : null
+  health_check       = lookup(local.ecs_container_health_checks, each.value.service, null)
   log_retention_days = each.value.log_retention_days
 
   capacity_provider_strategy = [

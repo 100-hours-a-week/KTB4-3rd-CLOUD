@@ -12,8 +12,8 @@ export const DISTRICTS = [
 
 // 모바일 지도 한 화면(줌 15~16) 수준. map-pins는 서버에서 뷰포트 크기를 검증하지 않으므로
 // 너무 넓은 뷰포트는 현실과 다른 풀스캔 부하가 된다.
-const LAT_SPAN = envFloat('VIEWPORT_LAT_SPAN', 0.02, 0.001, 1);
-const LNG_SPAN = envFloat('VIEWPORT_LNG_SPAN', 0.025, 0.001, 1);
+export const LAT_SPAN = envFloat('VIEWPORT_LAT_SPAN', 0.02, 0.001, 1);
+export const LNG_SPAN = envFloat('VIEWPORT_LNG_SPAN', 0.025, 0.001, 1);
 const JITTER = envFloat('POINT_JITTER', 0.008, 0, 0.5);
 
 function round6(value) {

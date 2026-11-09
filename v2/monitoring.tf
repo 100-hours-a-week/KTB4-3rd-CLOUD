@@ -35,6 +35,8 @@ locals {
     rest      = { port = var.spring_management_port, metrics_path = "/actuator/prometheus" }
     websocket = { port = var.spring_management_port, metrics_path = "/actuator/prometheus" }
     fastapi   = { port = var.fastapi_port, metrics_path = "/metrics" }
+    worker    = { port = var.spring_management_port, metrics_path = "/actuator/prometheus" }
+    matching  = { port = var.spring_management_port, metrics_path = "/actuator/prometheus" }
   }
 
   # "prod-rest" 같은 ECS 서비스 인스턴스 중 메트릭을 수집할 대상
@@ -96,10 +98,11 @@ resource "aws_vpc_security_group_ingress_rule" "monitoring_loki_from_ecs_instanc
 
 # 모니터링 SG ← 태스크 SG : OTLP push 포트만 연다 (otlp_push_stages에 든 스테이지의 메트릭 수집 서비스 태스크)
 resource "aws_vpc_security_group_ingress_rule" "monitoring_otlp_from_tasks" {
-  for_each = local.monitoring_enabled ? {
-    for k, s in local.ecs_service_instances : k => s
+  # 키 집합만 쓰므로 toset으로 묶는다 (object 조건식은 속성 타입이 달라 {}와 맞지 않는다)
+  for_each = toset(local.monitoring_enabled ? [
+    for k, s in local.ecs_service_instances : k
     if contains(var.otlp_push_stages, s.stage) && contains(keys(local.monitoring_metrics_endpoints), s.service)
-  } : {}
+  ] : [])
 
   security_group_id            = aws_security_group.monitoring[0].id
   description                  = "OTLP metrics push from ${each.key} tasks"
@@ -147,7 +150,8 @@ module "monitoring" {
   grafana_alert_stages      = var.monitoring_grafana_alerting_enabled ? var.alert_stages : []
 
   # 이관 리허설 (migration.tf). migration_rehearsal_enabled = false면 모두 비어 있다
-  static_scrape_targets = local.migration_scrape_targets
+  # MSK 브로커 exporter (msk.tf). msk_stages가 비어 있으면 대상이 없다
+  static_scrape_targets = concat(local.migration_scrape_targets, local.msk_scrape_targets)
   mysql_datasources     = local.migration_mysql_datasources
   extra_dashboards      = local.migration_dashboards
 

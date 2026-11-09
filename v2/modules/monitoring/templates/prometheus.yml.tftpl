@@ -59,7 +59,7 @@ scrape_configs:
   # ${t.stage} ${t.service} — ECS 밖 고정 대상 (static_scrape_targets)
   - job_name: ${t.job}
     metrics_path: ${t.metrics_path}
-    scrape_interval: 15s
+    scrape_interval: ${t.scrape_interval}
     static_configs:
       - targets: [${join(", ", [for x in t.targets : "\"${x}\""])}]
         labels:
