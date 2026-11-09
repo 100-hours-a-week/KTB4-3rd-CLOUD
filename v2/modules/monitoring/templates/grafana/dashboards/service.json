@@ -56,8 +56,26 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "query": "label_values(up{stage=\"$stage\", service=~\"rest|websocket\"}, service)",
-        "definition": "label_values(up{stage=\"$stage\", service=~\"rest|websocket\"}, service)",
+        "query": "label_values(jvm_memory_used_bytes{stage=\"$stage\", service=~\"rest|websocket\"}, service)",
+        "definition": "label_values(jvm_memory_used_bytes{stage=\"$stage\", service=~\"rest|websocket\"}, service)",
+        "refresh": 2,
+        "sort": 1,
+        "includeAll": false,
+        "multi": false,
+        "hide": 0,
+        "current": {},
+        "options": []
+      },
+      {
+        "name": "job",
+        "label": "Job",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
+        "query": "label_values(jvm_memory_used_bytes{stage=\"$stage\", service=\"$service\"}, job)",
+        "definition": "label_values(jvm_memory_used_bytes{stage=\"$stage\", service=\"$service\"}, job)",
         "refresh": 2,
         "sort": 1,
         "includeAll": false,
@@ -74,8 +92,8 @@
           "type": "prometheus",
           "uid": "prometheus"
         },
-        "query": "label_values(up{stage=\"$stage\", service=\"$service\"}, instance)",
-        "definition": "label_values(up{stage=\"$stage\", service=\"$service\"}, instance)",
+        "query": "label_values(jvm_memory_used_bytes{stage=\"$stage\", service=\"$service\", job=~\"$job\"}, instance)",
+        "definition": "label_values(jvm_memory_used_bytes{stage=\"$stage\", service=\"$service\", job=~\"$job\"}, instance)",
         "refresh": 2,
         "sort": 1,
         "includeAll": true,
@@ -124,6 +142,412 @@
   ],
   "panels": [
     {
+      "id": 70,
+      "type": "row",
+      "title": "[부하 테스트] 핵심 — 태스크별 Hikari·JVM heap·GC·푸시 큐",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Hikari active (태스크별)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (instance) (hikaricp_connections_active{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
+          "legendFormat": "active {{instance}}",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "max by (instance) (hikaricp_connections_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
+          "legendFormat": "max {{instance}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 71,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 1
+      },
+      "description": "instance = rest 태스크. max에 닿으면 풀 고갈."
+    },
+    {
+      "type": "timeseries",
+      "title": "Hikari pending (태스크별)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (instance) (hikaricp_connections_pending{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
+          "legendFormat": "pending {{instance}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 72,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 1
+      },
+      "description": "커넥션을 기다리는 스레드 수. 0이 아니면 풀 대기 발생."
+    },
+    {
+      "type": "timeseries",
+      "title": "JVM heap (태스크별)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (instance) (jvm_memory_used_bytes{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", area=\"heap\"})",
+          "legendFormat": "used {{instance}}",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (instance) (jvm_memory_max_bytes{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", area=\"heap\"} > 0)",
+          "legendFormat": "max {{instance}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 73,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 1
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "GC 일시 정지 (태스크별)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum by (instance) (rate(jvm_gc_pause_seconds_sum{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))) or ((sum by (instance) (rate(jvm_gc_pause_milliseconds_sum{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))) / 1000)",
+          "legendFormat": "시간(초/초) {{instance}}",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(max by (instance) (jvm_gc_pause_seconds_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) or ((max by (instance) (jvm_gc_pause_max_milliseconds{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) / 1000)",
+          "legendFormat": "최대 {{instance}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 74,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 9
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "notificationPushExecutor 큐",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (instance) (executor_queued_tasks{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", name=\"notificationPushExecutor\"})",
+          "legendFormat": "queued {{instance}}",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "min by (instance) (executor_queue_remaining_tasks{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", name=\"notificationPushExecutor\"} < 1e9)",
+          "legendFormat": "남은 용량 {{instance}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 75,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 9
+      },
+      "description": "푸시 풀 2~4스레드·큐 100. 남은 용량이 0이면 거부 발생."
+    },
+    {
+      "type": "timeseries",
+      "title": "notificationPushExecutor 스레드·처리량",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (instance) (executor_active_threads{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", name=\"notificationPushExecutor\"})",
+          "legendFormat": "active {{instance}}",
+          "range": true
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (instance) (executor_pool_size_threads{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", name=\"notificationPushExecutor\"})",
+          "legendFormat": "pool {{instance}}",
+          "range": true
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (instance) (rate(executor_completed_tasks_total{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", name=\"notificationPushExecutor\"}[$__rate_interval]))",
+          "legendFormat": "완료/s {{instance}}",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "stacking": {
+              "mode": "none"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": [
+            "mean",
+            "max",
+            "lastNotNull"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      },
+      "id": 76,
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 9
+      }
+    },
+    {
       "id": 1,
       "type": "row",
       "title": "요청",
@@ -132,7 +556,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 0
+        "y": 17
       },
       "panels": []
     },
@@ -150,7 +574,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (uri) (rate(http_server_requests_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval]))",
+          "expr": "(sum by (uri) (rate(http_server_requests_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval]))) or (sum by (uri) (rate(http_server_requests_milliseconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))",
           "legendFormat": "{{uri}}",
           "range": true
         }
@@ -188,7 +612,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 1
+        "y": 18
       }
     },
     {
@@ -205,7 +629,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (status) (rate(http_server_requests_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval]))",
+          "expr": "(sum by (status) (rate(http_server_requests_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval]))) or (sum by (status) (rate(http_server_requests_milliseconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))",
           "legendFormat": "{{status}}",
           "range": true
         }
@@ -243,7 +667,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 1
+        "y": 18
       }
     },
     {
@@ -260,7 +684,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.5, sum by (le) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))",
+          "expr": "(histogram_quantile(0.5, sum by (le) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))) or ((histogram_quantile(0.5, sum by (le) (rate(http_server_requests_milliseconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))) / 1000)",
           "legendFormat": "p50",
           "range": true
         },
@@ -270,7 +694,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))",
+          "expr": "(histogram_quantile(0.95, sum by (le) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))) or ((histogram_quantile(0.95, sum by (le) (rate(http_server_requests_milliseconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))) / 1000)",
           "legendFormat": "p95",
           "range": true
         },
@@ -280,7 +704,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))",
+          "expr": "(histogram_quantile(0.99, sum by (le) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))) or ((histogram_quantile(0.99, sum by (le) (rate(http_server_requests_milliseconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))) / 1000)",
           "legendFormat": "p99",
           "range": true
         }
@@ -318,7 +742,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 9
+        "y": 26
       }
     },
     {
@@ -335,7 +759,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.99, sum by (uri, le) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))",
+          "expr": "(histogram_quantile(0.99, sum by (uri, le) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))) or ((histogram_quantile(0.99, sum by (uri, le) (rate(http_server_requests_milliseconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))) / 1000)",
           "legendFormat": "{{uri}}",
           "range": true
         }
@@ -373,7 +797,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 9
+        "y": 26
       }
     },
     {
@@ -385,7 +809,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 34
       },
       "panels": []
     },
@@ -403,7 +827,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (instance) (jvm_memory_used_bytes{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", area=\"heap\"})",
+          "expr": "sum by (instance) (jvm_memory_used_bytes{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", area=\"heap\"})",
           "legendFormat": "used {{instance}}",
           "range": true
         },
@@ -413,7 +837,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (instance) (jvm_memory_max_bytes{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", area=\"heap\"} > 0)",
+          "expr": "sum by (instance) (jvm_memory_max_bytes{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", area=\"heap\"} > 0)",
           "legendFormat": "max {{instance}}",
           "range": true
         }
@@ -451,7 +875,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 18
+        "y": 35
       }
     },
     {
@@ -468,7 +892,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (instance) (rate(jvm_gc_pause_seconds_sum{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval]))",
+          "expr": "(sum by (instance) (rate(jvm_gc_pause_seconds_sum{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))) or ((sum by (instance) (rate(jvm_gc_pause_milliseconds_sum{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))) / 1000)",
           "legendFormat": "{{instance}}",
           "range": true
         }
@@ -506,7 +930,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 18
+        "y": 35
       }
     },
     {
@@ -523,7 +947,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "max by (instance) (process_cpu_usage{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+          "expr": "max by (instance) (process_cpu_usage{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
           "legendFormat": "{{instance}}",
           "range": true
         }
@@ -561,7 +985,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 18
+        "y": 35
       }
     },
     {
@@ -578,7 +1002,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (instance) (jvm_threads_live_threads{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+          "expr": "(sum by (instance) (jvm_threads_live_threads{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) or (sum by (instance) (jvm_threads_live{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}))",
           "legendFormat": "{{instance}}",
           "range": true
         }
@@ -616,7 +1040,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 26
+        "y": 43
       }
     },
     {
@@ -628,7 +1052,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 34
+        "y": 51
       },
       "panels": []
     },
@@ -646,7 +1070,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (instance) (hikaricp_connections_active{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+          "expr": "sum by (instance) (hikaricp_connections_active{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
           "legendFormat": "active {{instance}}",
           "range": true
         },
@@ -656,7 +1080,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (instance) (hikaricp_connections_idle{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+          "expr": "sum by (instance) (hikaricp_connections_idle{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
           "legendFormat": "idle {{instance}}",
           "range": true
         },
@@ -666,7 +1090,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (instance) (hikaricp_connections_pending{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+          "expr": "sum by (instance) (hikaricp_connections_pending{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
           "legendFormat": "pending {{instance}}",
           "range": true
         },
@@ -676,7 +1100,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (instance) (hikaricp_connections_max{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+          "expr": "sum by (instance) (hikaricp_connections_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
           "legendFormat": "max {{instance}}",
           "range": true
         }
@@ -714,7 +1138,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 35
+        "y": 52
       }
     },
     {
@@ -731,7 +1155,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (instance) (rate(hikaricp_connections_acquire_seconds_sum{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval])) / sum by (instance) (rate(hikaricp_connections_acquire_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval]))",
+          "expr": "(sum by (instance) (rate(hikaricp_connections_acquire_seconds_sum{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) / sum by (instance) (rate(hikaricp_connections_acquire_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))) or ((sum by (instance) (rate(hikaricp_connections_acquire_milliseconds_sum{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) / sum by (instance) (rate(hikaricp_connections_acquire_milliseconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))) / 1000)",
           "legendFormat": "{{instance}}",
           "range": true
         }
@@ -769,7 +1193,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 35
+        "y": 52
       }
     },
     {
@@ -781,7 +1205,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 43
+        "y": 60
       },
       "panels": []
     },
@@ -816,7 +1240,7 @@
         "h": 12,
         "w": 24,
         "x": 0,
-        "y": 44
+        "y": 61
       }
     },
     {
@@ -828,7 +1252,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 56
+        "y": 73
       },
       "panels": [
         {
@@ -845,7 +1269,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (http_server_requests_active_seconds_active_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "sum by (instance) (http_server_requests_active_seconds_active_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "{{instance}}",
               "range": true
             }
@@ -884,7 +1308,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 57
+            "y": 74
           }
         },
         {
@@ -901,7 +1325,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (http_server_requests_active_seconds_max{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "(max by (instance) (http_server_requests_active_seconds_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) or ((max by (instance) (http_server_requests_active_max_milliseconds{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) / 1000)",
               "legendFormat": "{{instance}}",
               "range": true
             }
@@ -956,7 +1380,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 57
+            "y": 74
           }
         },
         {
@@ -973,7 +1397,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\", le=\"1.0\"}[$__rate_interval])) / sum by (instance) (rate(http_server_requests_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval]))",
+              "expr": "(sum by (instance) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\", le=\"1.0\"}[$__rate_interval])) / sum by (instance) (rate(http_server_requests_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval]))) or (sum by (instance) (rate(http_server_requests_milliseconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\", le=\"1000\"}[$__rate_interval])) / sum by (instance) (rate(http_server_requests_milliseconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval]))))",
               "legendFormat": "≤1s {{instance}}",
               "range": true
             },
@@ -983,7 +1407,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\", le=\"2.5\"}[$__rate_interval])) / sum by (instance) (rate(http_server_requests_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval]))",
+              "expr": "(sum by (instance) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\", le=\"2.5\"}[$__rate_interval])) / sum by (instance) (rate(http_server_requests_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval]))) or (sum by (instance) (rate(http_server_requests_milliseconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\", le=\"2500\"}[$__rate_interval])) / sum by (instance) (rate(http_server_requests_milliseconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval]))))",
               "legendFormat": "≤2.5s {{instance}}",
               "range": true
             }
@@ -1022,7 +1446,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 57
+            "y": 74
           }
         },
         {
@@ -1039,7 +1463,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (tomcat_threads_busy_threads{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "sum by (instance) (tomcat_threads_busy_threads{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "busy {{instance}}",
               "range": true
             },
@@ -1049,7 +1473,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (tomcat_threads_current_threads{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "sum by (instance) (tomcat_threads_current_threads{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "current {{instance}}",
               "range": true
             },
@@ -1059,7 +1483,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (tomcat_threads_config_max_threads{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "max by (instance) (tomcat_threads_config_max_threads{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "max {{instance}}",
               "range": true
             }
@@ -1098,7 +1522,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 65
+            "y": 82
           }
         },
         {
@@ -1115,7 +1539,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (tomcat_connections_current_connections{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "sum by (instance) (tomcat_connections_current_connections{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "current {{instance}}",
               "range": true
             },
@@ -1125,7 +1549,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (tomcat_connections_keepalive_current_connections{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "sum by (instance) (tomcat_connections_keepalive_current_connections{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "keep-alive {{instance}}",
               "range": true
             },
@@ -1135,7 +1559,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (tomcat_connections_config_max_connections{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "max by (instance) (tomcat_connections_config_max_connections{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "max {{instance}}",
               "range": true
             }
@@ -1174,7 +1598,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 65
+            "y": 82
           }
         },
         {
@@ -1191,7 +1615,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "histogram_quantile(0.95, sum by (instance, le) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))",
+              "expr": "(histogram_quantile(0.95, sum by (instance, le) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))) or ((histogram_quantile(0.95, sum by (instance, le) (rate(http_server_requests_milliseconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))) / 1000)",
               "legendFormat": "p95 {{instance}}",
               "range": true
             },
@@ -1201,7 +1625,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "histogram_quantile(0.99, sum by (instance, le) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))",
+              "expr": "(histogram_quantile(0.99, sum by (instance, le) (rate(http_server_requests_seconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))) or ((histogram_quantile(0.99, sum by (instance, le) (rate(http_server_requests_milliseconds_bucket{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"}[$__rate_interval])))) / 1000)",
               "legendFormat": "p99 {{instance}}",
               "range": true
             }
@@ -1259,7 +1683,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 73
+            "y": 90
           }
         },
         {
@@ -1276,7 +1700,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (uri) (http_server_requests_seconds_max{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\"})",
+              "expr": "(max by (uri) (http_server_requests_seconds_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"})) or ((max by (uri) (http_server_requests_max_milliseconds{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\"})) / 1000)",
               "legendFormat": "{{uri}}",
               "range": true
             }
@@ -1314,7 +1738,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 73
+            "y": 90
           }
         },
         {
@@ -1331,7 +1755,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (exception, uri) (rate(http_server_requests_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\", exception!=\"none\"}[$__rate_interval]))",
+              "expr": "sum by (exception, uri) (rate(http_server_requests_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\", exception!=\"none\"}[$__rate_interval]))",
               "legendFormat": "{{exception}} {{uri}}",
               "range": true
             }
@@ -1369,7 +1793,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 81
+            "y": 98
           }
         },
         {
@@ -1386,7 +1810,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (uri, status) (rate(http_server_requests_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", uri!~\"/actuator.*\", status=~\"409|429|5..\"}[$__rate_interval]))",
+              "expr": "sum by (uri, status) (rate(http_server_requests_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", uri!~\"/actuator.*\", status=~\"409|429|5..\"}[$__rate_interval]))",
               "legendFormat": "{{status}} {{uri}}",
               "range": true
             }
@@ -1425,7 +1849,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 81
+            "y": 98
           }
         }
       ]
@@ -1439,7 +1863,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 74
       },
       "panels": [
         {
@@ -1456,7 +1880,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (hikaricp_connections_active{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"} / hikaricp_connections_max{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "max by (instance) (hikaricp_connections_active{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"} / hikaricp_connections_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "{{instance}}",
               "range": true
             }
@@ -1496,7 +1920,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 58
+            "y": 75
           }
         },
         {
@@ -1513,7 +1937,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (hikaricp_connections_acquire_seconds_max{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "(max by (instance) (hikaricp_connections_acquire_seconds_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) or ((max by (instance) (hikaricp_connections_acquire_max_milliseconds{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) / 1000)",
               "legendFormat": "{{instance}}",
               "range": true
             }
@@ -1568,7 +1992,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 58
+            "y": 75
           }
         },
         {
@@ -1585,7 +2009,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (rate(hikaricp_connections_usage_seconds_sum{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval])) / sum by (instance) (rate(hikaricp_connections_usage_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval]))",
+              "expr": "(sum by (instance) (rate(hikaricp_connections_usage_seconds_sum{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) / sum by (instance) (rate(hikaricp_connections_usage_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))) or ((sum by (instance) (rate(hikaricp_connections_usage_milliseconds_sum{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) / sum by (instance) (rate(hikaricp_connections_usage_milliseconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))) / 1000)",
               "legendFormat": "평균 {{instance}}",
               "range": true
             },
@@ -1595,7 +2019,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (hikaricp_connections_usage_seconds_max{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "(max by (instance) (hikaricp_connections_usage_seconds_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) or ((max by (instance) (hikaricp_connections_usage_max_milliseconds{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) / 1000)",
               "legendFormat": "최대 {{instance}}",
               "range": true
             }
@@ -1634,7 +2058,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 58
+            "y": 75
           }
         },
         {
@@ -1651,7 +2075,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (rate(hikaricp_connections_timeout_total{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval])) * 60",
+              "expr": "sum by (instance) (rate(hikaricp_connections_timeout_total{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) * 60",
               "legendFormat": "{{instance}}",
               "range": true
             }
@@ -1689,7 +2113,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 66
+            "y": 83
           }
         },
         {
@@ -1706,7 +2130,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (hikaricp_connections_creation_seconds_max{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "(max by (instance) (hikaricp_connections_creation_seconds_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) or ((max by (instance) (hikaricp_connections_creation_max_milliseconds{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) / 1000)",
               "legendFormat": "{{instance}}",
               "range": true
             }
@@ -1745,7 +2169,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 66
+            "y": 83
           }
         },
         {
@@ -1762,7 +2186,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (hikaricp_connections{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "sum by (instance) (hikaricp_connections{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "{{instance}}",
               "range": true
             },
@@ -1772,7 +2196,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum(hikaricp_connections{stage=\"$stage\", service=\"$service\"})",
+              "expr": "sum(hikaricp_connections{stage=\"$stage\", service=\"$service\", job=~\"$job\"})",
               "legendFormat": "합계",
               "range": true
             }
@@ -1811,7 +2235,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 66
+            "y": 83
           }
         }
       ]
@@ -1825,7 +2249,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 58
+        "y": 75
       },
       "panels": [
         {
@@ -1842,7 +2266,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "topk(10, sum by (repository, method) (rate(spring_data_repository_invocations_seconds_sum{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval])) / sum by (repository, method) (rate(spring_data_repository_invocations_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval])))",
+              "expr": "(topk(10, sum by (repository, method) (rate(spring_data_repository_invocations_seconds_sum{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) / sum by (repository, method) (rate(spring_data_repository_invocations_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])))) or ((topk(10, sum by (repository, method) (rate(spring_data_repository_invocations_milliseconds_sum{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) / sum by (repository, method) (rate(spring_data_repository_invocations_milliseconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])))) / 1000)",
               "legendFormat": "{{repository}}.{{method}}",
               "range": true
             }
@@ -1881,7 +2305,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 59
+            "y": 76
           }
         },
         {
@@ -1898,7 +2322,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "topk(10, max by (repository, method) (spring_data_repository_invocations_seconds_max{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}))",
+              "expr": "(topk(10, max by (repository, method) (spring_data_repository_invocations_seconds_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}))) or ((topk(10, max by (repository, method) (spring_data_repository_invocations_max_milliseconds{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}))) / 1000)",
               "legendFormat": "{{repository}}.{{method}}",
               "range": true
             }
@@ -1936,7 +2360,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 59
+            "y": 76
           }
         },
         {
@@ -1953,7 +2377,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "topk(10, sum by (repository, method) (rate(spring_data_repository_invocations_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval])))",
+              "expr": "(topk(10, sum by (repository, method) (rate(spring_data_repository_invocations_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])))) or (topk(10, sum by (repository, method) (rate(spring_data_repository_invocations_milliseconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))))",
               "legendFormat": "{{repository}}.{{method}}",
               "range": true
             }
@@ -1991,7 +2415,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 67
+            "y": 84
           }
         },
         {
@@ -2008,7 +2432,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (repository, method, exception) (rate(spring_data_repository_invocations_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", state!=\"SUCCESS\"}[$__rate_interval]))",
+              "expr": "sum by (repository, method, exception) (rate(spring_data_repository_invocations_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", state!=\"SUCCESS\"}[$__rate_interval]))",
               "legendFormat": "{{repository}}.{{method}} {{exception}}",
               "range": true
             }
@@ -2047,7 +2471,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 67
+            "y": 84
           }
         }
       ]
@@ -2061,7 +2485,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 59
+        "y": 76
       },
       "panels": [
         {
@@ -2078,7 +2502,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance, action, cause) (jvm_gc_pause_seconds_max{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "(max by (instance, action, cause) (jvm_gc_pause_seconds_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) or ((max by (instance, action, cause) (jvm_gc_pause_max_milliseconds{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) / 1000)",
               "legendFormat": "{{instance}} {{action}} {{cause}}",
               "range": true
             }
@@ -2116,7 +2540,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 60
+            "y": 77
           }
         },
         {
@@ -2133,7 +2557,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance, action) (rate(jvm_gc_pause_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval]))",
+              "expr": "(sum by (instance, action) (rate(jvm_gc_pause_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))) or (sum by (instance, action) (rate(jvm_gc_pause_milliseconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])))",
               "legendFormat": "{{instance}} {{action}}",
               "range": true
             }
@@ -2171,7 +2595,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 60
+            "y": 77
           }
         },
         {
@@ -2188,7 +2612,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (rate(jvm_gc_memory_allocated_bytes_total{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval]))",
+              "expr": "sum by (instance) (rate(jvm_gc_memory_allocated_bytes_total{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))",
               "legendFormat": "{{instance}}",
               "range": true
             }
@@ -2226,7 +2650,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 60
+            "y": 77
           }
         },
         {
@@ -2243,7 +2667,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance, id) (jvm_memory_used_bytes{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", area=\"heap\"})",
+              "expr": "sum by (instance, id) (jvm_memory_used_bytes{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", area=\"heap\"})",
               "legendFormat": "{{instance}} {{id}}",
               "range": true
             }
@@ -2281,7 +2705,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 68
+            "y": 85
           }
         },
         {
@@ -2298,7 +2722,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (jvm_gc_live_data_size_bytes{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "max by (instance) (jvm_gc_live_data_size_bytes{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "live {{instance}}",
               "range": true
             },
@@ -2308,7 +2732,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (jvm_gc_max_data_size_bytes{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "max by (instance) (jvm_gc_max_data_size_bytes{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "max {{instance}}",
               "range": true
             }
@@ -2347,7 +2771,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 68
+            "y": 85
           }
         },
         {
@@ -2364,7 +2788,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (jvm_memory_used_bytes{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", area=\"nonheap\"})",
+              "expr": "sum by (instance) (jvm_memory_used_bytes{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", area=\"nonheap\"})",
               "legendFormat": "nonheap {{instance}}",
               "range": true
             },
@@ -2374,7 +2798,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (jvm_buffer_memory_used_bytes{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", id=\"direct\"})",
+              "expr": "sum by (instance) (jvm_buffer_memory_used_bytes{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", id=\"direct\"})",
               "legendFormat": "direct {{instance}}",
               "range": true
             }
@@ -2413,7 +2837,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 68
+            "y": 85
           }
         },
         {
@@ -2430,7 +2854,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (state) (jvm_threads_states_threads{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "(sum by (state) (jvm_threads_states_threads{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) or (sum by (state) (jvm_threads_states{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}))",
               "legendFormat": "{{state}}",
               "range": true
             }
@@ -2469,7 +2893,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 76
+            "y": 93
           }
         },
         {
@@ -2486,7 +2910,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (process_files_open_files{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "(max by (instance) (process_files_open_files{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) or (max by (instance) (process_files_open{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}))",
               "legendFormat": "open {{instance}}",
               "range": true
             },
@@ -2496,7 +2920,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (process_files_max_files{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "(max by (instance) (process_files_max_files{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) or (max by (instance) (process_files_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}))",
               "legendFormat": "max {{instance}}",
               "range": true
             }
@@ -2535,7 +2959,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 76
+            "y": 93
           }
         },
         {
@@ -2552,7 +2976,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (process_cpu_usage{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "max by (instance) (process_cpu_usage{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "process {{instance}}",
               "range": true
             },
@@ -2562,7 +2986,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (system_cpu_usage{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "max by (instance) (system_cpu_usage{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "system {{instance}}",
               "range": true
             }
@@ -2601,7 +3025,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 76
+            "y": 93
           }
         },
         {
@@ -2618,7 +3042,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (system_cpu_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "max by (instance) (system_cpu_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "{{instance}}",
               "instant": true,
               "range": false
@@ -2662,7 +3086,7 @@
             "h": 5,
             "w": 8,
             "x": 0,
-            "y": 84
+            "y": 101
           }
         },
         {
@@ -2679,7 +3103,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance) (application_ready_time_seconds{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "(max by (instance) (application_ready_time_seconds{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) or ((max by (instance) (application_ready_time_milliseconds{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) / 1000)",
               "legendFormat": "{{instance}}",
               "instant": true,
               "range": false
@@ -2723,7 +3147,7 @@
             "h": 5,
             "w": 8,
             "x": 8,
-            "y": 84
+            "y": 101
           }
         },
         {
@@ -2740,7 +3164,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "min by (instance) (process_uptime_seconds{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "(min by (instance) (process_uptime_seconds{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) or ((min by (instance) (process_uptime_milliseconds{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) / 1000)",
               "legendFormat": "{{instance}}",
               "instant": true,
               "range": false
@@ -2782,7 +3206,7 @@
             "h": 5,
             "w": 8,
             "x": 16,
-            "y": 84
+            "y": 101
           }
         },
         {
@@ -2799,7 +3223,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (level) (rate(logback_events_total{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval]))",
+              "expr": "sum by (level) (rate(logback_events_total{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))",
               "legendFormat": "{{level}}",
               "range": true
             }
@@ -2837,7 +3261,7 @@
             "h": 6,
             "w": 24,
             "x": 0,
-            "y": 89
+            "y": 106
           }
         }
       ]
@@ -2851,7 +3275,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 77
       },
       "panels": [
         {
@@ -2866,7 +3290,7 @@
             "h": 3,
             "w": 24,
             "x": 0,
-            "y": 61
+            "y": 78
           }
         },
         {
@@ -2883,7 +3307,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance, name) (executor_active_threads{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "sum by (instance, name) (executor_active_threads{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "{{name}} {{instance}}",
               "range": true
             }
@@ -2921,7 +3345,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 64
+            "y": 81
           }
         },
         {
@@ -2938,7 +3362,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance, name) (executor_queued_tasks{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "sum by (instance, name) (executor_queued_tasks{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "{{name}} {{instance}}",
               "range": true
             }
@@ -2976,7 +3400,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 64
+            "y": 81
           }
         },
         {
@@ -2993,7 +3417,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "min by (instance, name) (executor_queue_remaining_tasks{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"} < 1e9)",
+              "expr": "min by (instance, name) (executor_queue_remaining_tasks{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"} < 1e9)",
               "legendFormat": "{{name}} {{instance}}",
               "range": true
             }
@@ -3032,7 +3456,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 72
+            "y": 89
           }
         },
         {
@@ -3049,7 +3473,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance, name) (executor_pool_size_threads{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "sum by (instance, name) (executor_pool_size_threads{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "{{name}} {{instance}}",
               "range": true
             }
@@ -3087,7 +3511,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 72
+            "y": 89
           }
         },
         {
@@ -3104,7 +3528,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance, name) (rate(executor_completed_tasks_total{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval]))",
+              "expr": "sum by (instance, name) (rate(executor_completed_tasks_total{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))",
               "legendFormat": "{{name}} {{instance}}",
               "range": true
             }
@@ -3142,7 +3566,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 72
+            "y": 89
           }
         }
       ]
@@ -3156,7 +3580,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 61
+        "y": 78
       },
       "panels": [
         {
@@ -3173,7 +3597,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance, target, result) (rate(ws_relay_publish_total{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval]))",
+              "expr": "sum by (instance, target, result) (rate(ws_relay_publish_total{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))",
               "legendFormat": "{{instance}} {{target}} {{result}}",
               "range": true
             }
@@ -3212,7 +3636,7 @@
             "h": 8,
             "w": 8,
             "x": 0,
-            "y": 62
+            "y": 79
           }
         },
         {
@@ -3229,7 +3653,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance) (rate(ws_relay_publish_total{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", result=\"failure\"}[$__rate_interval])) / sum by (instance) (rate(ws_relay_publish_total{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval]))",
+              "expr": "sum by (instance) (rate(ws_relay_publish_total{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", result=\"failure\"}[$__rate_interval])) / sum by (instance) (rate(ws_relay_publish_total{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))",
               "legendFormat": "{{instance}}",
               "range": true
             }
@@ -3269,7 +3693,7 @@
             "h": 8,
             "w": 8,
             "x": 8,
-            "y": 62
+            "y": 79
           }
         },
         {
@@ -3286,7 +3710,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (command) (lettuce_command_completion_seconds_max{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "max by (command) (lettuce_command_completion_seconds_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "{{command}}",
               "range": true
             }
@@ -3341,7 +3765,7 @@
             "h": 8,
             "w": 8,
             "x": 16,
-            "y": 62
+            "y": 79
           }
         },
         {
@@ -3358,7 +3782,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (command) (rate(lettuce_command_completion_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval]))",
+              "expr": "sum by (command) (rate(lettuce_command_completion_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))",
               "legendFormat": "{{command}}",
               "range": true
             }
@@ -3396,7 +3820,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 70
+            "y": 87
           }
         },
         {
@@ -3413,7 +3837,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (command) (rate(lettuce_command_firstresponse_seconds_sum{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval])) / sum by (command) (rate(lettuce_command_firstresponse_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval]))",
+              "expr": "sum by (command) (rate(lettuce_command_firstresponse_seconds_sum{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) / sum by (command) (rate(lettuce_command_firstresponse_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval]))",
               "legendFormat": "{{command}}",
               "range": true
             }
@@ -3451,7 +3875,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 70
+            "y": 87
           }
         }
       ]
@@ -3465,7 +3889,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 62
+        "y": 79
       },
       "panels": [
         {
@@ -3482,7 +3906,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (instance, code_function) (rate(tasks_scheduled_execution_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"}[$__rate_interval])) * 60",
+              "expr": "(sum by (instance, code_function) (rate(tasks_scheduled_execution_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) * 60) or (sum by (instance, code_function) (rate(tasks_scheduled_execution_milliseconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"}[$__rate_interval])) * 60)",
               "legendFormat": "{{code_function}} {{instance}}",
               "range": true
             }
@@ -3521,7 +3945,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 63
+            "y": 80
           }
         },
         {
@@ -3538,7 +3962,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "max by (instance, code_function) (tasks_scheduled_execution_seconds_max{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "(max by (instance, code_function) (tasks_scheduled_execution_seconds_max{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) or ((max by (instance, code_function) (tasks_scheduled_execution_max_milliseconds{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})) / 1000)",
               "legendFormat": "{{code_function}} {{instance}}",
               "range": true
             }
@@ -3577,7 +4001,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 63
+            "y": 80
           }
         },
         {
@@ -3594,7 +4018,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (code_function) (tasks_scheduled_execution_active_seconds_active_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\"})",
+              "expr": "sum by (code_function) (tasks_scheduled_execution_active_seconds_active_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\"})",
               "legendFormat": "{{code_function}}",
               "range": true
             }
@@ -3634,7 +4058,7 @@
             "h": 8,
             "w": 12,
             "x": 0,
-            "y": 71
+            "y": 88
           }
         },
         {
@@ -3651,7 +4075,7 @@
                 "type": "prometheus",
                 "uid": "prometheus"
               },
-              "expr": "sum by (code_function, exception) (rate(tasks_scheduled_execution_seconds_count{stage=\"$stage\", service=\"$service\", instance=~\"$instance\", outcome!=\"SUCCESS\"}[$__rate_interval]))",
+              "expr": "sum by (code_function, exception) (rate(tasks_scheduled_execution_seconds_count{stage=\"$stage\", service=\"$service\", job=~\"$job\", instance=~\"$instance\", outcome!=\"SUCCESS\"}[$__rate_interval]))",
               "legendFormat": "{{code_function}} {{exception}}",
               "range": true
             }
@@ -3689,7 +4113,7 @@
             "h": 8,
             "w": 12,
             "x": 12,
-            "y": 71
+            "y": 88
           }
         }
       ]

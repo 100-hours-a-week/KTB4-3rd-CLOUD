@@ -344,11 +344,11 @@ variable "ecs_stages" {
 variable "ecs_services" {
   description = "각 클러스터에서 운영할 ECS Service 목록. 서비스마다 스테이지별 Task Role이 생성된다."
   type        = list(string)
-  default     = ["rest", "websocket", "frontend", "fastapi"]
+  default     = ["rest", "websocket", "frontend", "fastapi", "worker", "matching"]
 
   validation {
-    condition     = alltrue([for s in var.ecs_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
-    error_message = "ecs_services may only contain rest, websocket, frontend, fastapi (locals.ecs_service_specs keys)."
+    condition     = alltrue([for s in var.ecs_services : contains(["rest", "websocket", "frontend", "fastapi", "worker", "matching"], s)])
+    error_message = "ecs_services may only contain rest, websocket, frontend, fastapi, worker, matching (locals.ecs_service_specs keys)."
   }
 }
 
@@ -389,10 +389,10 @@ variable "ecs_container_images" {
   validation {
     condition = alltrue(flatten([
       for stage, images in var.ecs_container_images : [
-        for svc, image in images : contains(["dev", "stg", "prod"], stage) && contains(["rest", "websocket", "frontend", "fastapi"], svc)
+        for svc, image in images : contains(["dev", "stg", "prod"], stage) && contains(["rest", "websocket", "frontend", "fastapi", "worker", "matching"], svc)
       ]
     ]))
-    error_message = "ecs_container_images keys must be stage (dev/stg/prod) → service (rest/websocket/frontend/fastapi)."
+    error_message = "ecs_container_images keys must be stage (dev/stg/prod) → service (rest/websocket/frontend/fastapi/worker/matching)."
   }
 }
 
@@ -505,10 +505,16 @@ variable "alarm_sns_topic_arn" {
   nullable    = true
 }
 
+variable "mongodb_stages" {
+  description = "MONGODB_URI SSM 파라미터를 만들고 rest·websocket 태스크에 주입할 스테이지. dev부터 적용하고, stg·prod는 MongoDB를 준비한 뒤 추가한다."
+  type        = list(string)
+  default     = ["dev"]
+}
+
 variable "dev_data_ports" {
-  description = "dev rest·websocket 태스크가 dev EC2(compose MySQL·Redis)에 접근할 포트"
+  description = "dev rest·websocket 태스크가 dev EC2(compose MySQL·Redis·MongoDB)에 접근할 포트"
   type        = list(number)
-  default     = [3306, 6379]
+  default     = [3306, 6379, 27017]
 }
 
 # -----------------------------------------------------------------------------
@@ -1260,4 +1266,37 @@ variable "msk_admin_image" {
   description = "kafka-init 태스크 이미지. 브로커와 같은 계열로 태그를 고정하고 latest를 쓰지 않는다."
   type        = string
   default     = "apache/kafka:4.1.2"
+}
+
+# -----------------------------------------------------------------------------
+# dev Kafka EC2 (kafka_dev.tf)
+# -----------------------------------------------------------------------------
+
+variable "dev_kafka_enabled" {
+  description = "dev 전용 Kafka EC2 1노드를 만든다. dev를 msk_stages에 함께 넣을 수 없다."
+  type        = bool
+  default     = false
+}
+
+variable "dev_kafka_version" {
+  description = "dev Kafka 이미지 태그(apache/kafka). stg MSK와 같은 4.1 계열로 고정하고 latest를 쓰지 않는다."
+  type        = string
+  default     = "4.1.2"
+
+  validation {
+    condition     = can(regex("^\\d+\\.\\d+\\.\\d+$", var.dev_kafka_version))
+    error_message = "dev_kafka_version은 4.1.2 같은 고정 태그여야 한다."
+  }
+}
+
+variable "dev_kafka_instance_type" {
+  description = "dev Kafka 호스트 타입. 힙 1GiB, 컨테이너 한도 2GiB 기준."
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "dev_kafka_root_gib" {
+  description = "dev Kafka 호스트 루트 볼륨(GiB). 데이터도 여기에 있다. stop/start에는 유지되고 교체하면 사라진다."
+  type        = number
+  default     = 30
 }

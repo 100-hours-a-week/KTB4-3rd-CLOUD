@@ -51,7 +51,7 @@ alb_idle_timeout_seconds = 300
 # 스테이지마다 ASG min_size만큼 인스턴스가 서비스 없이도 뜬다 (prod: rest-od 2 + ws-od 3 + general-od 1).
 # dev·stg 스케줄링 테스트 기간에는 prod를 빼 둔다.
 ecs_stages              = ["dev", "stg"]
-ecs_services            = ["rest", "websocket", "frontend", "fastapi"]
+ecs_services            = ["rest", "websocket", "frontend", "fastapi", "worker", "matching"]
 github_org              = "100-hours-a-week"
 github_cloud_repository = "KTB4-3rd-CLOUD"
 
@@ -193,3 +193,6 @@ monitoring_grafana_alerting_enabled = false
 #   msk_instance_types 기본값 : stg kafka.m7g.large. dev를 추가하려면 타입도 지정한다 (kafka.t3.small 미지원)
 # msk_stages       = ["stg"]
 # msk_third_subnet = { cidr = "10.20.102.0/24", az = "ap-northeast-2b" }
+
+# dev Kafka EC2 1노드 (kafka_dev.tf) — dev 스케줄로 시작·중지. dev를 msk_stages에 함께 넣지 않는다
+# dev_kafka_enabled = true

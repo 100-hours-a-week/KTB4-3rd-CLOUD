@@ -1,0 +1,61 @@
+# dev Kafka 1노드 (kafka_dev.tf가 호스트의 /opt/kafka/compose.yaml로 배치한다)
+#   값은 같은 폴더의 .env에서 읽는다 : KAFKA_IMAGE, KAFKA_ADVERTISED_HOST
+#   9092(EXTERNAL)만 publish한다. 19092(컨테이너 내부)와 9093(컨트롤러)은 호스트 밖으로 열지 않는다.
+services:
+  kafka:
+    image: ${KAFKA_IMAGE}
+    container_name: kafka
+    restart: unless-stopped
+    stop_grace_period: 60s
+    ports:
+      - "9092:9092"
+    environment:
+      CLUSTER_ID: dGVzdC1tb3llb3RhLWRldg
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_LISTENERS: EXTERNAL://:9092,INTERNAL://:19092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: EXTERNAL://${KAFKA_ADVERTISED_HOST}:9092,INTERNAL://kafka:19092
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_MIN_INSYNC_REPLICAS: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      # 지정하지 않으면 이미지 기본값(/tmp/kraft-combined-logs)에 저장되어 컨테이너를 다시 만들 때 사라진다
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      KAFKA_LOG_RETENTION_BYTES: 1073741824
+      KAFKA_HEAP_OPTS: -Xms1g -Xmx1g
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    mem_limit: 2g
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:19092 >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  kafka-init:
+    image: ${KAFKA_IMAGE}
+    container_name: kafka-init
+    restart: "no"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:19092
+    entrypoint: ["/bin/sh", "/opt/init/topics.sh"]
+    volumes:
+      - ./topics.sh:/opt/init/topics.sh:ro
+
+volumes:
+  kafka-data:
