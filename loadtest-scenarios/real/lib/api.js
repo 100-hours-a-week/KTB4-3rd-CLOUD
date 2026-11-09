@@ -37,6 +37,19 @@ export const RULES = {
   taxiCurrent: { good: [200] },
   taxiDetail: { good: [200], rejected: ['TAXI_POT_NOT_FOUND'] },
   taxiLeave: { good: [200, 204], rejected: ['TAXI_POT_NOT_FOUND'] },
+  // 방장의 탑승 시작/완료. 출발 전·인원 미달·상태 전이 위반은 도메인 거절
+  rideStatus: {
+    good: [200],
+    rejected: ['DEPARTURE_NOT_REACHED', 'NOT_ENOUGH_PARTICIPANTS', 'INVALID_STATE_TRANSITION', 'HOST_ONLY',
+      'TAXI_POT_NOT_FOUND', 'CARPOOL_NOT_FOUND'],
+  },
+  carpoolCreate: { good: [201], rejected: ['CAR_REGISTRATION_REQUIRED', 'DEPARTURE_TIME_PASSED', 'DEPARTURE_TIME_TOO_FAR', 'SAME_ORIGIN_DEST'] },
+  carpoolJoinRequest: {
+    good: [201],
+    rejected: ['CARPOOL_NOT_FOUND', 'CARPOOL_CLOSED', 'OWN_CARPOOL', 'CAPACITY_FULL', 'ALREADY_PARTICIPATING',
+      'REQUEST_ALREADY_PENDING', 'REQUEST_LIMIT_EXCEEDED'],
+  },
+  carpoolHandle: { good: [200], rejected: ['CARPOOL_REQUEST_NOT_FOUND', 'REQUEST_ALREADY_HANDLED', 'CAPACITY_FULL', 'CARPOOL_CLOSED', 'HOST_ONLY'] },
 };
 
 let base = '';
@@ -191,6 +204,31 @@ export function taxiPotDetail(id, opts = {}) {
 
 export function leaveTaxiPot(id, opts = {}) {
   return request('DELETE', `/api/taxi-pots/${id}/participants/me`, '/api/taxi-pots/{companion_id}/participants/me', { ...opts, rule: RULES.taxiLeave });
+}
+
+export function changeTaxiPotStatus(id, status, opts = {}) {
+  return request('PATCH', `/api/taxi-pots/${id}`, '/api/taxi-pots/{companion_id}', { ...opts, body: { status }, rule: RULES.rideStatus });
+}
+
+// ---------- 카풀 (스케줄러 부하: real/scheduler-flow.js) ----------
+export function createCarpool(body, opts = {}) {
+  return request('POST', '/api/carpools', '/api/carpools', { ...opts, body, rule: RULES.carpoolCreate });
+}
+
+export function sendCarpoolJoinRequest(id, content, opts = {}) {
+  return request('POST', `/api/carpools/${id}/join-requests`, '/api/carpools/{companion_id}/join-requests', {
+    ...opts, body: { content }, rule: RULES.carpoolJoinRequest,
+  });
+}
+
+export function handleCarpoolJoinRequest(id, requestId, status, opts = {}) {
+  return request('PATCH', `/api/carpools/${id}/join-requests/${requestId}`, '/api/carpools/{companion_id}/join-requests/{request_id}', {
+    ...opts, body: { status }, rule: RULES.carpoolHandle,
+  });
+}
+
+export function changeCarpoolStatus(id, status, opts = {}) {
+  return request('PATCH', `/api/carpools/${id}`, '/api/carpools/{companion_id}', { ...opts, body: { status }, rule: RULES.rideStatus });
 }
 
 // http.batch로 같은 행에 동시 도착시키기 위한 요청 빌더 (hot-row 전용)

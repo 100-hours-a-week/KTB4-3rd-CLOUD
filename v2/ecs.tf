@@ -45,7 +45,7 @@ locals {
 
   # ALB에 붙이지 않는 내부 전용 서비스. 같은 스테이지 서비스가 Service Connect(http://<name>:<port>)로만 호출한다.
   #   fastapi : 호출하는 곳이 BE뿐이라 외부 노출하지 않는다 (/ocr/* 경로 제거)
-  ecs_internal_only_services = ["fastapi", "worker"]
+  ecs_internal_only_services = ["fastapi", "worker", "matching"]
 
   # 스테이지 × 서비스 → "prod-rest" 같은 키로 펼친다. 이미지가 지정된 서비스만 만든다.
   ecs_service_instances = merge([
@@ -64,7 +64,7 @@ locals {
         secrets = merge(
           merge(flatten([
             for group in local.ecs_service_param_groups[svc] : [{
-              for key in local.ssm_param_keys[group] :
+              for key in local.ssm_stage_param_keys[stage][group] :
               key => aws_ssm_parameter.app["${stage}/${group}/${key}"].arn
             }]
           ])...),

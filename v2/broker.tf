@@ -47,7 +47,7 @@ locals {
   ]...)
 
   # 데이터 계층에 붙는 서비스
-  data_client_services = ["rest", "websocket", "worker"]
+  data_client_services = ["rest", "websocket", "worker", "matching"]
 
   # "stg-rest" → { stage, sg_id }. 이미지가 없어 만들어지지 않은 서비스는 빠진다.
   data_client_task_sgs = {
