@@ -505,10 +505,16 @@ variable "alarm_sns_topic_arn" {
   nullable    = true
 }
 
+variable "mongodb_stages" {
+  description = "MONGODB_URI SSM 파라미터를 만들고 rest·websocket 태스크에 주입할 스테이지. dev부터 적용하고, stg·prod는 MongoDB를 준비한 뒤 추가한다."
+  type        = list(string)
+  default     = ["dev"]
+}
+
 variable "dev_data_ports" {
-  description = "dev rest·websocket 태스크가 dev EC2(compose MySQL·Redis)에 접근할 포트"
+  description = "dev rest·websocket 태스크가 dev EC2(compose MySQL·Redis·MongoDB)에 접근할 포트"
   type        = list(number)
-  default     = [3306, 6379]
+  default     = [3306, 6379, 27017]
 }
 
 # -----------------------------------------------------------------------------

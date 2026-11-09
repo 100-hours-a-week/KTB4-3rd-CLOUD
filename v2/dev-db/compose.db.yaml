@@ -1,5 +1,5 @@
 # V2 dev 데이터 계층 (dev EC2 호스트: aws_instance.host["dev"])
-#   - rest·websocket 태스크가 <호스트 private IP>:3306 / :6379 로 접속한다 (SSM DB_HOST, broker/REDIS_HOST)
+#   - rest·websocket 태스크가 <호스트 private IP>:3306 / :6379 / :27017 로 접속한다 (SSM DB_HOST, broker/REDIS_HOST, backend/MONGODB_URI)
 #   - Docker data-root가 데이터 EBS(/mnt/docker-data/docker)라서 mysql-data 볼륨은 호스트를 교체해도 EBS와 함께 남는다
 #   - 실행: sudo docker compose --env-file db.env -f compose.db.yaml up -d
 name: moyeota-dev-db
@@ -41,5 +41,27 @@ services:
       - "6379:6379"
     mem_limit: 384m
 
+  mongo:
+    image: mongo:8.0 # 혼잡도(2dsphere·시계열+TTL)용. DocumentDB는 시계열 컬렉션 미지원이라 직접 운영
+    container_name: mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      TZ: Asia/Seoul
+    # WiredTiger 캐시를 작게 제한 (dev EC2 메모리를 MySQL·Redis와 나눠 쓴다)
+    command: ["--wiredTigerCacheSizeGB", "0.25"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep -q 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
 volumes:
   mysql-data:
+  mongo-data:

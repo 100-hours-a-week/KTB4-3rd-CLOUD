@@ -35,6 +35,12 @@ locals {
       "DB_USERNAME",
       "DB_PASSWORD",
 
+      # MongoDB (혼잡도) — 예: mongodb://<user>:<pw>@<dev EC2 private IP>:27017/moyeota?authSource=moyeota
+      "MONGODB_URI",
+
+      # 혼잡도 작성자 키 시크릿
+      "CONGESTION_AUTHOR_KEY_SECRET",
+
       # 인증·암호화 (V1 값이 노출된 것으로 보고 새 값으로 교체한다)
       "JWT_SECRET",
       "ACCOUNT_ENC_KEY",
@@ -101,10 +107,26 @@ locals {
     matching  = ["backend"]
   }
 
+  # 일부 스테이지에만 두는 키 → 스테이지 목록. 목록에 없는 스테이지는 파라미터도, 태스크 secrets 주입도 만들지 않는다.
+  #   MONGODB_URI : dev부터 적용하고, stg·prod는 mongodb_stages에 넣을 때 추가한다
+  ssm_stage_scoped_keys = {
+    MONGODB_URI = var.mongodb_stages
+  }
+
+  # 스테이지 → 그룹 → 실제로 만드는 키 (ecs.tf secrets도 이 값을 쓴다)
+  ssm_stage_param_keys = {
+    for stage in keys(local.ecs_stages) : stage => {
+      for group, param_keys in local.ssm_param_keys : group => [
+        for key in param_keys : key
+        if !contains(keys(local.ssm_stage_scoped_keys), key) || contains(local.ssm_stage_scoped_keys[key], stage)
+      ]
+    }
+  }
+
   # "dev/backend/DB_PASSWORD" → { stage, group, key }
   ssm_params = merge(flatten([
     for stage in keys(local.ecs_stages) : [
-      for group, param_keys in local.ssm_param_keys : {
+      for group, param_keys in local.ssm_stage_param_keys[stage] : {
         for key in param_keys : "${stage}/${group}/${key}" => {
           stage = stage
           group = group
