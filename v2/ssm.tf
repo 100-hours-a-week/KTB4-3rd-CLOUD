@@ -98,6 +98,7 @@ locals {
     frontend  = ["frontend"]
     fastapi   = ["ai"]
     worker    = ["backend"]
+    matching  = ["backend"]
   }
 
   # "dev/backend/DB_PASSWORD" → { stage, group, key }

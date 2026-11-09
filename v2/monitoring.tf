@@ -36,6 +36,7 @@ locals {
     websocket = { port = var.spring_management_port, metrics_path = "/actuator/prometheus" }
     fastapi   = { port = var.fastapi_port, metrics_path = "/metrics" }
     worker    = { port = var.spring_management_port, metrics_path = "/actuator/prometheus" }
+    matching  = { port = var.spring_management_port, metrics_path = "/actuator/prometheus" }
   }
 
   # "prod-rest" 같은 ECS 서비스 인스턴스 중 메트릭을 수집할 대상

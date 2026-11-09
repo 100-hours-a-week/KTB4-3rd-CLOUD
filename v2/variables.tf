@@ -344,11 +344,11 @@ variable "ecs_stages" {
 variable "ecs_services" {
   description = "각 클러스터에서 운영할 ECS Service 목록. 서비스마다 스테이지별 Task Role이 생성된다."
   type        = list(string)
-  default     = ["rest", "websocket", "frontend", "fastapi", "worker"]
+  default     = ["rest", "websocket", "frontend", "fastapi", "worker", "matching"]
 
   validation {
-    condition     = alltrue([for s in var.ecs_services : contains(["rest", "websocket", "frontend", "fastapi", "worker"], s)])
-    error_message = "ecs_services may only contain rest, websocket, frontend, fastapi, worker (locals.ecs_service_specs keys)."
+    condition     = alltrue([for s in var.ecs_services : contains(["rest", "websocket", "frontend", "fastapi", "worker", "matching"], s)])
+    error_message = "ecs_services may only contain rest, websocket, frontend, fastapi, worker, matching (locals.ecs_service_specs keys)."
   }
 }
 
@@ -389,10 +389,10 @@ variable "ecs_container_images" {
   validation {
     condition = alltrue(flatten([
       for stage, images in var.ecs_container_images : [
-        for svc, image in images : contains(["dev", "stg", "prod"], stage) && contains(["rest", "websocket", "frontend", "fastapi", "worker"], svc)
+        for svc, image in images : contains(["dev", "stg", "prod"], stage) && contains(["rest", "websocket", "frontend", "fastapi", "worker", "matching"], svc)
       ]
     ]))
-    error_message = "ecs_container_images keys must be stage (dev/stg/prod) → service (rest/websocket/frontend/fastapi/worker)."
+    error_message = "ecs_container_images keys must be stage (dev/stg/prod) → service (rest/websocket/frontend/fastapi/worker/matching)."
   }
 }
 
