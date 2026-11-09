@@ -47,6 +47,10 @@ locals {
   #   fastapi : 호출하는 곳이 BE뿐이라 외부 노출하지 않는다 (/ocr/* 경로 제거)
   ecs_internal_only_services = ["fastapi", "worker", "matching"]
 
+  # 매칭을 Kafka Streams로 돌릴 때 모드 값을 받는 서비스 (BE 기본값은 batch).
+  #   rest : 매칭 요청을 아웃박스에 기록, worker : 매칭 결정 반영, matching : Streams. websocket은 Kafka에 붙지 않는다.
+  kafka_matching_services = ["rest", "worker", "matching"]
+
   # 스테이지 × 서비스 → "prod-rest" 같은 키로 펼친다. 이미지가 지정된 서비스만 만든다.
   ecs_service_instances = merge([
     for stage, s in local.ecs_stages : {
@@ -197,6 +201,7 @@ module "ecs_service" {
   environment = merge(
     each.value.environment,
     contains(keys(local.monitoring_metrics_endpoints), each.value.service) ? lookup(local.otlp_push_environment, each.value.stage, {}) : {},
+    contains(var.kafka_matching_stages, each.value.stage) && contains(local.kafka_matching_services, each.value.service) ? { MOYEOTA_TAXIPOT_MATCHING_MODE = "kafka" } : {},
   )
   secrets            = each.value.secrets
   entry_point        = contains(local.be_container_services, each.value.service) ? local.be_container_entry_point : null
