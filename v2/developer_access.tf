@@ -5,8 +5,8 @@
 #   목적: BE가 인프라를 거치지 않고 dev 앱 로그·ECS 상태를 직접 보고, rest·websocket 컨테이너에 ECS Exec로 들어갈 수 있게 한다.
 #
 #   허용
-#     - 로그       : dev rest·websocket·fastapi 로그 그룹만 조회 (Service Connect 프록시 로그 포함)
-#                    stg rest·websocket·fastapi 로그 그룹도 조회만 가능 (stg_backend_log_services) — stg 서비스가 떠 있을 때만 ARN이 생긴다
+#     - 로그       : dev rest·websocket·fastapi·worker·matching 로그 그룹만 조회 (Service Connect 프록시 로그 포함)
+#                    stg rest·websocket·fastapi·worker·matching 로그 그룹도 조회만 가능 (stg_backend_log_services) — stg 서비스가 떠 있을 때만 ARN이 생긴다
 #                    exec 로그 그룹(/ecs/<cluster>/exec)은 다른 사람의 Exec 세션 기록이라 제외
 #     - ECS 상태   : dev 클러스터 서비스·태스크·컨테이너 인스턴스 조회
 #                    DescribeTaskDefinition·ListClusters는 리소스 제한이 안 되는 API라 계정 전체(*) — prod Task Definition도 보인다
