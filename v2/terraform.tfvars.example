@@ -51,7 +51,7 @@ alb_idle_timeout_seconds = 300
 # 스테이지마다 ASG min_size만큼 인스턴스가 서비스 없이도 뜬다 (prod: rest-od 2 + ws-od 3 + general-od 1).
 # dev·stg 스케줄링 테스트 기간에는 prod를 빼 둔다.
 ecs_stages              = ["dev", "stg"]
-ecs_services            = ["rest", "websocket", "frontend", "fastapi"]
+ecs_services            = ["rest", "websocket", "frontend", "fastapi", "worker", "matching"]
 github_org              = "100-hours-a-week"
 github_cloud_repository = "KTB4-3rd-CLOUD"
 

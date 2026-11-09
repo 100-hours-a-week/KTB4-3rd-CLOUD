@@ -41,3 +41,6 @@ loadtest-scenarios/migration/tools/*
 v2/dev-db/db.env
 .DS_Store
 /x/
+
+/v2/migration/
+/portfolio-draft/

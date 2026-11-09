@@ -156,13 +156,25 @@ locals {
 #                    원래 ENTRYPOINT: ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"] (BE Dockerfile)
 #                    BE Dockerfile의 실행 명령이 바뀌면 여기도 같이 바꾼다.
 locals {
-  be_container_services    = ["rest", "websocket"]
+  be_container_services    = ["rest", "websocket", "worker", "matching"]
   be_container_entry_point = ["sh", "-c"]
   be_container_command = [join("; ", [
     "case \"$FCM_SERVICE_ACCOUNT_JSON\" in \"{\"*) umask 077 && printf '%s' \"$FCM_SERVICE_ACCOUNT_JSON\" > /tmp/fcm.json && export GOOGLE_APPLICATION_CREDENTIALS=/tmp/fcm.json ;; esac",
     "unset FCM_SERVICE_ACCOUNT_JSON",
     "exec java $JAVA_OPTS -jar /app/app.jar",
   ])]
+
+  # 컨테이너 헬스체크 (ALB가 없는 서비스). CLOUD #137 A3 : 관리 포트의 liveness가 DOWN이면 ECS가 태스크를 교체한다.
+  #   BE 이미지(eclipse-temurin JRE)에 curl·wget이 없어 bash /dev/tcp로 호출한다.
+  ecs_container_health_checks = {
+    for svc in ["worker", "matching"] : svc => {
+      command     = ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/${var.spring_management_port} && printf 'GET /actuator/health/liveness HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && timeout 3 grep -q '\"status\":\"UP\"' <&3"]
+      interval    = 30
+      timeout     = 5
+      retries     = 3
+      startPeriod = 120
+    }
+  }
 
   ecs_service_specs = {
     websocket = {
@@ -208,6 +220,40 @@ locals {
       path_patterns        = []                         # 내부 전용 — ALB에 붙이지 않는다 (ecs.tf ecs_internal_only_services)
       route_order          = 2
       health_check_path    = var.fastapi_health_path
+      health_check_port    = null
+      health_check_matcher = "200-399"
+      deregistration_delay = 30
+    }
+    # worker : 같은 BE 이미지. Kafka 소비·매칭 Streams 등 뒷일 담당, ALB 없음 (CLOUD #137 A3, 비고 "서버 역할 분리")
+    #          시작값이며 측정 후 조정한다. 8080은 열리지만 쓰지 않고 관리 포트 8090만 쓴다
+    worker = {
+      task_cpu             = 512
+      task_memory          = 1536
+      container_cpu        = 512
+      container_memory     = 1472
+      container_port       = var.rest_port
+      additional_ports     = [var.spring_management_port]
+      environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx736m", APP_ROLE = "worker", AI_BASE_URL = "http://fastapi:${var.fastapi_port}" }
+      path_patterns        = []
+      route_order          = 4
+      health_check_path    = var.rest_health_path
+      health_check_port    = null
+      health_check_matcher = "200-399"
+      deregistration_delay = 30
+    }
+    # matching : 같은 BE 이미지. 매칭 Kafka Streams 전용, ALB 없음 (CLOUD #137 비고 "서버 역할 분리")
+    #            APP_ROLE=matching은 BE #336 이후 이미지에서만 기동된다. 크기는 worker와 같은 시작값이며 측정 후 조정한다
+    matching = {
+      task_cpu             = 512
+      task_memory          = 1536
+      container_cpu        = 512
+      container_memory     = 1472
+      container_port       = var.rest_port
+      additional_ports     = [var.spring_management_port]
+      environment          = { JAVA_TOOL_OPTIONS = "-Xms128m -Xmx736m", APP_ROLE = "matching" }
+      path_patterns        = []
+      route_order          = 5
+      health_check_path    = var.rest_health_path
       health_check_port    = null
       health_check_matcher = "200-399"
       deregistration_delay = 30
@@ -321,15 +367,16 @@ locals {
           instance_types        = []
           instance_requirements = local.ecs_spot_requirements.dev_shared
           min                   = 0
-          # dev MSK를 켜면 kafka-init 자리가 필요해 1대 늘린다 (기존 서비스가 2대를 모두 쓴다)
-          max = contains(var.msk_stages, "dev") ? 3 : 2
+          # 기존 4개 서비스가 2대를 모두 쓴다. dev MSK(kafka-init)나 worker를 쓰면 자리가 필요해 1대 늘린다
+          # matching까지 쓰면 6개 태스크가 3대를 꽉 채우므로 1대 더 둔다
+          max = contains(keys(lookup(var.ecs_container_images, "dev", {})), "matching") ? 4 : (contains(var.msk_stages, "dev") || contains(keys(lookup(var.ecs_container_images, "dev", {})), "worker") ? 3 : 2)
         }
       }
 
       # t3.medium은 ENI 3개 → 호스트당 awsvpc 태스크 2개. 4개 서비스 = 2대라
       # 롤링 여유가 없으므로 dev는 기존 태스크를 먼저 내리고 새 태스크를 띄운다 (0% / 100%).
       services = {
-        for svc in ["rest", "websocket", "frontend", "fastapi"] : svc => {
+        for svc in ["rest", "websocket", "frontend", "fastapi", "worker", "matching"] : svc => {
           strategy             = [{ asg = "shared-spot", base = 0, weight = 1 }]
           placement_role       = "shared"
           distinct_instance    = false
@@ -374,6 +421,28 @@ locals {
       }
 
       services = {
+        # 이미지(ecs_container_images.stg.worker)를 지정할 때만 만들어진다. worker 역할이 있는 release 이미지 필요
+        worker = {
+          strategy             = [{ asg = "shared-spot", base = 0, weight = 1 }]
+          placement_role       = "shared"
+          distinct_instance    = false
+          placement_strategies = [{ type = "binpack", field = "memory" }]
+          desired              = 1
+          deploy_min           = 0
+          deploy_max           = 100
+          autoscaling          = null
+        }
+        # 이미지(ecs_container_images.stg.matching)를 지정할 때만 만들어진다. BE #336 이후 release 이미지 필요
+        matching = {
+          strategy             = [{ asg = "shared-spot", base = 0, weight = 1 }]
+          placement_role       = "shared"
+          distinct_instance    = false
+          placement_strategies = [{ type = "binpack", field = "memory" }]
+          desired              = 1
+          deploy_min           = 0
+          deploy_max           = 100
+          autoscaling          = null
+        }
         rest = {
           strategy = [
             { asg = "general-od", base = 2, weight = 1 },

@@ -120,6 +120,18 @@ variable "secrets" {
   default     = {}
 }
 
+variable "health_check" {
+  description = "컨테이너 healthCheck. ALB가 없는 서비스에서 멈춘 태스크를 ECS가 교체하게 한다. null이면 넣지 않는다."
+  type = object({
+    command     = list(string)
+    interval    = number
+    timeout     = number
+    retries     = number
+    startPeriod = number
+  })
+  default = null
+}
+
 variable "stop_timeout_seconds" {
   description = "컨테이너 stopTimeout. Spot 2분 알림 안에 graceful shutdown이 끝나도록 120초 미만."
   type        = number

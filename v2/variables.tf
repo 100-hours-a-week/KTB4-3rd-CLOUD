@@ -344,11 +344,11 @@ variable "ecs_stages" {
 variable "ecs_services" {
   description = "각 클러스터에서 운영할 ECS Service 목록. 서비스마다 스테이지별 Task Role이 생성된다."
   type        = list(string)
-  default     = ["rest", "websocket", "frontend", "fastapi"]
+  default     = ["rest", "websocket", "frontend", "fastapi", "worker", "matching"]
 
   validation {
-    condition     = alltrue([for s in var.ecs_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
-    error_message = "ecs_services may only contain rest, websocket, frontend, fastapi (locals.ecs_service_specs keys)."
+    condition     = alltrue([for s in var.ecs_services : contains(["rest", "websocket", "frontend", "fastapi", "worker", "matching"], s)])
+    error_message = "ecs_services may only contain rest, websocket, frontend, fastapi, worker, matching (locals.ecs_service_specs keys)."
   }
 }
 
@@ -389,10 +389,10 @@ variable "ecs_container_images" {
   validation {
     condition = alltrue(flatten([
       for stage, images in var.ecs_container_images : [
-        for svc, image in images : contains(["dev", "stg", "prod"], stage) && contains(["rest", "websocket", "frontend", "fastapi"], svc)
+        for svc, image in images : contains(["dev", "stg", "prod"], stage) && contains(["rest", "websocket", "frontend", "fastapi", "worker", "matching"], svc)
       ]
     ]))
-    error_message = "ecs_container_images keys must be stage (dev/stg/prod) → service (rest/websocket/frontend/fastapi)."
+    error_message = "ecs_container_images keys must be stage (dev/stg/prod) → service (rest/websocket/frontend/fastapi/worker/matching)."
   }
 }
 
@@ -505,10 +505,16 @@ variable "alarm_sns_topic_arn" {
   nullable    = true
 }
 
+variable "mongodb_stages" {
+  description = "MONGODB_URI SSM 파라미터를 만들고 rest·websocket 태스크에 주입할 스테이지. dev부터 적용하고, stg·prod는 MongoDB를 준비한 뒤 추가한다."
+  type        = list(string)
+  default     = ["dev"]
+}
+
 variable "dev_data_ports" {
-  description = "dev rest·websocket 태스크가 dev EC2(compose MySQL·Redis)에 접근할 포트"
+  description = "dev rest·websocket 태스크가 dev EC2(compose MySQL·Redis·MongoDB)에 접근할 포트"
   type        = list(number)
-  default     = [3306, 6379]
+  default     = [3306, 6379, 27017]
 }
 
 # -----------------------------------------------------------------------------
