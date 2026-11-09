@@ -54,7 +54,7 @@ data "aws_iam_policy_document" "dev_instance_scheduler" {
   statement {
     sid       = "StartStopDevHostOnly"
     actions   = ["ec2:StartInstances", "ec2:StopInstances"]
-    resources = [aws_instance.host["dev"].arn]
+    resources = concat([aws_instance.host["dev"].arn], aws_instance.dev_kafka[*].arn)
   }
 }
 
@@ -83,7 +83,7 @@ resource "aws_scheduler_schedule" "dev_instance" {
   target {
     arn      = "arn:${data.aws_partition.current.partition}:scheduler:::aws-sdk:ec2:${each.value.action}"
     role_arn = aws_iam_role.dev_instance_scheduler[0].arn
-    input    = jsonencode({ InstanceIds = [aws_instance.host["dev"].id] })
+    input    = jsonencode({ InstanceIds = concat([aws_instance.host["dev"].id], aws_instance.dev_kafka[*].id) })
 
     retry_policy {
       maximum_event_age_in_seconds = 3600

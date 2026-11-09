@@ -45,7 +45,7 @@ locals {
 
   # ALB에 붙이지 않는 내부 전용 서비스. 같은 스테이지 서비스가 Service Connect(http://<name>:<port>)로만 호출한다.
   #   fastapi : 호출하는 곳이 BE뿐이라 외부 노출하지 않는다 (/ocr/* 경로 제거)
-  ecs_internal_only_services = ["fastapi"]
+  ecs_internal_only_services = ["fastapi", "worker", "matching"]
 
   # 스테이지 × 서비스 → "prod-rest" 같은 키로 펼친다. 이미지가 지정된 서비스만 만든다.
   ecs_service_instances = merge([
@@ -69,6 +69,8 @@ locals {
             }]
           ])...),
           { for key, arn in try(local.broker_secrets[stage], {}) : key => arn if contains(local.data_client_services, svc) },
+          # try()는 값이 미확정이면 결과 전체를 미확정으로 만들어 Kafka를 안 쓰는 서비스까지 교체하므로 lookup을 쓴다
+          { for key, arn in lookup(local.kafka_secrets, stage, {}) : key => arn if contains(local.msk_client_services, svc) },
         )
       })
       if contains(var.ecs_services, svc) && try(var.ecs_container_images[stage][svc], null) != null
@@ -119,6 +121,8 @@ module "ecs_asg" {
   cluster_name = module.ecs_cluster[each.value.stage].cluster_name
   role         = each.value.role
   purchase     = each.value.purchase
+  # dev만 최신 ECS AMI를 따른다. stg·prod는 ecs_pinned_amis의 값으로 고정한다 (교체는 별도 승인)
+  ami_id = each.value.stage == "dev" ? null : var.ecs_pinned_amis[each.value.stage]
 
   instance_types        = each.value.instance_types
   instance_requirements = each.value.instance_requirements
@@ -194,10 +198,11 @@ module "ecs_service" {
     each.value.environment,
     contains(keys(local.monitoring_metrics_endpoints), each.value.service) ? lookup(local.otlp_push_environment, each.value.stage, {}) : {},
   )
-  secrets                    = each.value.secrets
-  entry_point                = contains(local.be_container_services, each.value.service) ? local.be_container_entry_point : null
-  command                    = contains(local.be_container_services, each.value.service) ? local.be_container_command : null
-  log_retention_days         = each.value.log_retention_days
+  secrets            = each.value.secrets
+  entry_point        = contains(local.be_container_services, each.value.service) ? local.be_container_entry_point : null
+  command            = contains(local.be_container_services, each.value.service) ? local.be_container_command : null
+  health_check       = lookup(local.ecs_container_health_checks, each.value.service, null)
+  log_retention_days = each.value.log_retention_days
 
   capacity_provider_strategy = [
     for s in each.value.strategy : {

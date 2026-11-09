@@ -344,11 +344,11 @@ variable "ecs_stages" {
 variable "ecs_services" {
   description = "각 클러스터에서 운영할 ECS Service 목록. 서비스마다 스테이지별 Task Role이 생성된다."
   type        = list(string)
-  default     = ["rest", "websocket", "frontend", "fastapi"]
+  default     = ["rest", "websocket", "frontend", "fastapi", "worker", "matching"]
 
   validation {
-    condition     = alltrue([for s in var.ecs_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
-    error_message = "ecs_services may only contain rest, websocket, frontend, fastapi (locals.ecs_service_specs keys)."
+    condition     = alltrue([for s in var.ecs_services : contains(["rest", "websocket", "frontend", "fastapi", "worker", "matching"], s)])
+    error_message = "ecs_services may only contain rest, websocket, frontend, fastapi, worker, matching (locals.ecs_service_specs keys)."
   }
 }
 
@@ -389,10 +389,10 @@ variable "ecs_container_images" {
   validation {
     condition = alltrue(flatten([
       for stage, images in var.ecs_container_images : [
-        for svc, image in images : contains(["dev", "stg", "prod"], stage) && contains(["rest", "websocket", "frontend", "fastapi"], svc)
+        for svc, image in images : contains(["dev", "stg", "prod"], stage) && contains(["rest", "websocket", "frontend", "fastapi", "worker", "matching"], svc)
       ]
     ]))
-    error_message = "ecs_container_images keys must be stage (dev/stg/prod) → service (rest/websocket/frontend/fastapi)."
+    error_message = "ecs_container_images keys must be stage (dev/stg/prod) → service (rest/websocket/frontend/fastapi/worker/matching)."
   }
 }
 
@@ -505,10 +505,16 @@ variable "alarm_sns_topic_arn" {
   nullable    = true
 }
 
+variable "mongodb_stages" {
+  description = "MONGODB_URI SSM 파라미터를 만들고 rest·websocket 태스크에 주입할 스테이지. dev부터 적용하고, stg·prod는 MongoDB를 준비한 뒤 추가한다."
+  type        = list(string)
+  default     = ["dev"]
+}
+
 variable "dev_data_ports" {
-  description = "dev rest·websocket 태스크가 dev EC2(compose MySQL·Redis)에 접근할 포트"
+  description = "dev rest·websocket 태스크가 dev EC2(compose MySQL·Redis·MongoDB)에 접근할 포트"
   type        = list(number)
-  default     = [3306, 6379]
+  default     = [3306, 6379, 27017]
 }
 
 # -----------------------------------------------------------------------------
@@ -956,6 +962,19 @@ variable "otlp_push_stages" {
   }
 }
 
+variable "ecs_pinned_amis" {
+  description = <<-EOT
+    stg·prod ECS 호스트 AMI 고정값 (스테이지 → AMI ID). dev는 여기 없이 SSM 최신 AMI를 따른다.
+    값을 바꾸면 해당 스테이지의 ASG launch template이 바뀌고 instance refresh로 전 호스트가 한 대씩 교체된다. 교체는 별도 승인 후에만 바꾼다.
+    현재 값은 2026-10-30 plan 기준으로 상태에 있던 AMI다.
+  EOT
+  type        = map(string)
+  default = {
+    stg  = "ami-03fe595bfa08c00b8"
+    prod = "ami-03fe595bfa08c00b8"
+  }
+}
+
 variable "monitoring_alloy_stages" {
   description = <<-EOT
     Alloy DAEMON을 띄워 Loki로 로그를 보낼 ECS 스테이지. ecs_stages에 없는 값은 무시한다.
@@ -1156,6 +1175,9 @@ variable "ai_log_reader_group_name" {
   default     = "moyeota-ai"
 }
 
+# -----------------------------------------------------------------------------
+# MSK (msk.tf) — issues/kafka-msk-setup.md
+# -----------------------------------------------------------------------------
 
 
 # -----------------------------------------------------------------------------
@@ -1222,4 +1244,125 @@ variable "qdrant_snapshot_retain_days" {
     condition     = var.qdrant_snapshot_retain_days >= 1
     error_message = "qdrant_snapshot_retain_days는 1 이상이어야 한다 (스냅샷은 필수)."
   }
+}
+variable "msk_stages" {
+  description = "MSK 클러스터를 만들 스테이지. ecs_stages에 없는 값은 무시한다. 비우면 아무것도 만들지 않는다."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for s in var.msk_stages : contains(["dev", "stg", "prod"], s)])
+    error_message = "msk_stages may only contain dev, stg, prod."
+  }
+}
+
+variable "msk_third_subnet" {
+  description = "MSK 3AZ 구성용 데이터 서브넷. availability_zones와 다른 AZ, 공유 VPC에서 쓰지 않는 /24 CIDR이어야 한다."
+  type = object({
+    cidr = string
+    az   = string
+  })
+  default = null
+
+  validation {
+    condition     = var.msk_third_subnet == null || can(regex("/24$", var.msk_third_subnet.cidr))
+    error_message = "msk_third_subnet.cidr must be a /24 CIDR."
+  }
+
+  validation {
+    condition     = var.msk_third_subnet == null || !contains(var.availability_zones, var.msk_third_subnet.az)
+    error_message = "msk_third_subnet.az must differ from availability_zones."
+  }
+}
+
+variable "msk_kafka_version" {
+  description = "MSK Kafka 버전 (aws kafka list-kafka-versions 값). Standard 브로커는 4.2를 지원하지 않아 4.1.x.kraft를 쓴다 (클라이언트 4.2.1과의 호환은 issues/kafka-msk-setup.md 참고)."
+  type        = string
+  default     = "4.1.x.kraft"
+}
+
+variable "msk_instance_types" {
+  description = "스테이지 → MSK 브로커 인스턴스 타입. 4.1.x.kraft Standard는 kafka.t3.small을 지원하지 않는다 (CreateCluster 400, 2026-11-06). 최소 kafka.m5.large·kafka.m7g.large."
+  type        = map(string)
+  default = {
+    stg = "kafka.m7g.large"
+  }
+
+  validation {
+    condition     = alltrue([for t in values(var.msk_instance_types) : startswith(t, "kafka.")])
+    error_message = "msk_instance_types values must start with kafka."
+  }
+}
+
+variable "msk_volume_gib" {
+  description = "브로커당 시작 EBS 크기(GiB). 줄일 수 없다."
+  type        = number
+  default     = 100
+}
+
+variable "msk_storage_max_gib" {
+  description = "브로커당 스토리지 오토스케일링 상한(GiB). 늘어난 스토리지는 줄일 수 없으므로 비용 상한으로 정한다."
+  type        = number
+  default     = 500
+
+  validation {
+    condition     = var.msk_storage_max_gib >= var.msk_volume_gib
+    error_message = "msk_storage_max_gib must be >= msk_volume_gib."
+  }
+}
+
+variable "msk_enhanced_monitoring" {
+  description = "CloudWatch 지표 수준. 파티션별 lag(OffsetLag)을 보려면 PER_TOPIC_PER_PARTITION이 필요하다. DEFAULT 외에는 지표 비용이 든다."
+  type        = string
+  default     = "PER_TOPIC_PER_PARTITION"
+
+  validation {
+    condition     = contains(["DEFAULT", "PER_BROKER", "PER_TOPIC_PER_BROKER", "PER_TOPIC_PER_PARTITION"], var.msk_enhanced_monitoring)
+    error_message = "msk_enhanced_monitoring must be DEFAULT, PER_BROKER, PER_TOPIC_PER_BROKER or PER_TOPIC_PER_PARTITION."
+  }
+}
+
+variable "msk_log_retention_days" {
+  description = "MSK 브로커 로그·kafka-init 로그 보존 기간(일)"
+  type        = number
+  default     = 30
+}
+
+variable "msk_admin_image" {
+  description = "kafka-init 태스크 이미지. 브로커와 같은 계열로 태그를 고정하고 latest를 쓰지 않는다."
+  type        = string
+  default     = "apache/kafka:4.1.2"
+}
+
+# -----------------------------------------------------------------------------
+# dev Kafka EC2 (kafka_dev.tf)
+# -----------------------------------------------------------------------------
+
+variable "dev_kafka_enabled" {
+  description = "dev 전용 Kafka EC2 1노드를 만든다. dev를 msk_stages에 함께 넣을 수 없다."
+  type        = bool
+  default     = false
+}
+
+variable "dev_kafka_version" {
+  description = "dev Kafka 이미지 태그(apache/kafka). stg MSK와 같은 4.1 계열로 고정하고 latest를 쓰지 않는다."
+  type        = string
+  default     = "4.1.2"
+
+  validation {
+    condition     = can(regex("^\\d+\\.\\d+\\.\\d+$", var.dev_kafka_version))
+    error_message = "dev_kafka_version은 4.1.2 같은 고정 태그여야 한다."
+  }
+}
+
+variable "dev_kafka_instance_type" {
+  description = "dev Kafka 호스트 타입. 힙 1GiB, 컨테이너 한도 2GiB 기준."
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "dev_kafka_root_gib" {
+  description = "dev Kafka 호스트 루트 볼륨(GiB). 데이터도 여기에 있다. stop/start에는 유지되고 교체하면 사라진다."
+  type        = number
+  default     = 30
 }

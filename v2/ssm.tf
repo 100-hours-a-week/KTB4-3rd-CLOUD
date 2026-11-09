@@ -35,6 +35,12 @@ locals {
       "DB_USERNAME",
       "DB_PASSWORD",
 
+      # MongoDB (혼잡도) — 예: mongodb://<user>:<pw>@<dev EC2 private IP>:27017/moyeota?authSource=moyeota
+      "MONGODB_URI",
+
+      # 혼잡도 작성자 키 시크릿
+      "CONGESTION_AUTHOR_KEY_SECRET",
+
       # 인증·암호화 (V1 값이 노출된 것으로 보고 새 값으로 교체한다)
       "JWT_SECRET",
       "ACCOUNT_ENC_KEY",
@@ -114,10 +120,15 @@ locals {
     websocket = ["backend"]
     frontend  = ["frontend"]
     fastapi   = ["ai"]
+    worker    = ["backend"]
+    matching  = ["backend"]
   }
 
   # 일부 스테이지에만 두는 키 → 스테이지 목록. 목록에 없는 스테이지는 파라미터도, 태스크 secrets 주입도 만들지 않는다.
+  #   MONGODB_URI : dev부터 적용하고, stg·prod는 mongodb_stages에 넣을 때 추가한다
   ssm_stage_scoped_keys = {
+    MONGODB_URI = var.mongodb_stages
+
     # 서버 모니터링 봇 (qdrant.tf) — prod는 ai_monitor_stages에 넣을 때 추가
     AI_DB_URL          = var.ai_monitor_stages
     AI_QDRANT_URL      = var.ai_monitor_stages

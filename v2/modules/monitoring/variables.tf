@@ -136,6 +136,8 @@ variable "static_scrape_targets" {
     service      = string
     targets      = list(string)
     metrics_path = string
+    # MSK Open Monitoring은 AWS 권장에 따라 60s 이상으로 지정한다
+    scrape_interval = optional(string, "15s")
   }))
   default = []
 }

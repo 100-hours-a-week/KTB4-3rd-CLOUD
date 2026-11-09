@@ -113,6 +113,12 @@ variable "security_group_ids" {
 # Launch Template
 # ---------------------------------------------------------------------------
 
+variable "ami_id" {
+  description = "고정할 AMI ID. null이면 ami_ssm_parameter_name의 최신 값을 쓴다"
+  type        = string
+  default     = null
+}
+
 variable "ami_ssm_parameter_name" {
   description = "ECS-optimized AMI SSM 파라미터 (Amazon Linux 2023, x86_64)"
   type        = string
