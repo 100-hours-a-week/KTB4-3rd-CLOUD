@@ -511,6 +511,17 @@ variable "mongodb_stages" {
   default     = ["dev"]
 }
 
+variable "kafka_matching_stages" {
+  description = "택시팟 매칭을 Kafka Streams로 돌릴 스테이지. 없는 스테이지는 BE 기본값(RDB batch)으로 동작한다. 토픽이 만들어진 스테이지만 넣는다."
+  type        = list(string)
+  default     = ["dev"]
+
+  validation {
+    condition     = alltrue([for s in var.kafka_matching_stages : contains(["dev", "stg", "prod"], s)])
+    error_message = "kafka_matching_stages may only contain dev, stg, prod."
+  }
+}
+
 variable "dev_data_ports" {
   description = "dev rest·websocket 태스크가 dev EC2(compose MySQL·Redis·MongoDB)에 접근할 포트"
   type        = list(number)
