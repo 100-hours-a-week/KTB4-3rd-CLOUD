@@ -14,6 +14,8 @@ locals {
     stg-loki    = { sg = "moyeota-v2-monitoring", port = 3100, node = "stg" }
     stg-otlp    = { sg = "moyeota-v2-monitoring", port = 9090, node = "stg" }
     system-loki = { sg = "moyeota-v2-monitoring", port = 3100, node = "system" }
+    # kube-state-metrics를 스크랩한 system 노드 Alloy가 지표를 보내는 경로다.
+    system-otlp = { sg = "moyeota-v2-monitoring", port = 9090, node = "system" }
   }
 
   alb_ingress_ports = [8080, 8090, 3000]

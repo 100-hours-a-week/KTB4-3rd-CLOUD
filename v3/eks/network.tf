@@ -35,7 +35,7 @@ resource "aws_subnet" "cluster_c" {
   map_public_ip_on_launch = false
 
   tags = {
-    Name = "${var.project_name}-eks-c"
+    Name = "${local.name_prefix}-eks-c"
     Tier = "private-eks"
   }
 }

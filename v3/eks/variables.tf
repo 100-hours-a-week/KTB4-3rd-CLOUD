@@ -10,8 +10,9 @@ variable "aws_profile" {
 }
 
 variable "project_name" {
-  type    = string
-  default = "moyeota-v2"
+  description = "재사용하는 V2 자원(서브넷, 라우트 테이블, ALB)을 이름으로 찾는 접두사. EKS 자원 이름은 local.name_prefix를 쓴다."
+  type        = string
+  default     = "moyeota-v2"
 }
 
 variable "vpc_id" {
