@@ -1,0 +1,100 @@
+#!/usr/bin/env bash
+# Qdrant 호스트 부트스트랩 (qdrant.tf)
+#   1) Docker·AWS CLI 설치  2) 데이터 EBS 포맷·마운트  3) compose 파일 작성
+#   4) SSM의 API 키를 읽어 컨테이너 기동 (qdrant-apply)
+#   키가 CHANGE_ME면 기동하지 않고 종료한다 → 값 입력 후 SSM Run Command로 `qdrant-apply`를 다시 실행한다.
+set -Eeuo pipefail
+exec > >(tee /var/log/qdrant-bootstrap.log | logger -t qdrant-bootstrap -s 2>/dev/console) 2>&1
+
+AWS_REGION="${aws_region}"
+API_KEY_PARAM="${api_key_param}"
+QDRANT_IMAGE="${qdrant_image}"
+DATA_MOUNT="/mnt/qdrant"
+APP_DIR="/opt/qdrant"
+
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y xfsprogs docker.io docker-compose-v2 snapd
+systemctl enable --now docker
+systemctl enable --now snapd.socket || true
+systemctl enable --now amazon-ssm-agent || true
+systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent || true
+snap install aws-cli --classic || true
+
+# --- 데이터 EBS (루트가 아닌 첫 번째 디스크) ---------------------------------
+install -d -m 0750 "$${DATA_MOUNT}"
+root_source="$(findmnt -n -o SOURCE /)"
+root_disk="$(lsblk -no PKNAME "$${root_source}" 2>/dev/null || true)"
+data_device=""
+for _ in $(seq 1 60); do
+  while read -r candidate candidate_type; do
+    [[ "$${candidate_type}" == "disk" ]] || continue
+    [[ "$(basename "$${candidate}")" == "$${root_disk}" ]] && continue
+    data_device="$${candidate}"
+    break
+  done < <(lsblk -dnpo NAME,TYPE)
+  [[ -n "$${data_device}" ]] && break
+  sleep 5
+done
+if [[ -z "$${data_device}" ]]; then
+  echo "Qdrant data EBS did not appear within 300 seconds" >&2
+  exit 1
+fi
+if ! blkid "$${data_device}" >/dev/null 2>&1; then
+  mkfs.xfs -f "$${data_device}"
+fi
+data_uuid="$(blkid -s UUID -o value "$${data_device}")"
+grep -q "UUID=$${data_uuid} $${DATA_MOUNT} " /etc/fstab || \
+  echo "UUID=$${data_uuid} $${DATA_MOUNT} xfs defaults,nofail 0 2" >> /etc/fstab
+mountpoint -q "$${DATA_MOUNT}" || mount "$${DATA_MOUNT}"
+install -d -m 0755 "$${DATA_MOUNT}/storage" "$${DATA_MOUNT}/snapshots"
+
+# --- compose ---------------------------------------------------------------
+# 6333(REST)만 publish. 6334(gRPC)는 열지 않는다. API 키는 .env(0600)로만 주입한다.
+install -d -m 0750 "$${APP_DIR}"
+cat >"$${APP_DIR}/compose.yaml" <<COMPOSE
+services:
+  qdrant:
+    image: $${QDRANT_IMAGE}
+    restart: always
+    ports:
+      - "6333:6333"
+    environment:
+      QDRANT__SERVICE__API_KEY: "\$${QDRANT_API_KEY}"
+      QDRANT__TELEMETRY_DISABLED: "true"
+    volumes:
+      - $${DATA_MOUNT}/storage:/qdrant/storage
+      - $${DATA_MOUNT}/snapshots:/qdrant/snapshots
+    mem_limit: 1536m
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c ':> /dev/tcp/127.0.0.1/6333'"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
+COMPOSE
+
+# --- API 키 주입 + 기동 -------------------------------------------------------
+cat >/usr/local/bin/qdrant-apply <<'APPLY'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+export AWS_DEFAULT_REGION="__AWS_REGION__"
+key="$(aws ssm get-parameter --name "__API_KEY_PARAM__" --with-decryption --query Parameter.Value --output text)"
+if [[ -z "$${key}" || "$${key}" == "CHANGE_ME" ]]; then
+  echo "SSM __API_KEY_PARAM__ 값이 CHANGE_ME입니다. 값을 입력한 뒤 qdrant-apply를 다시 실행하세요." >&2
+  exit 2
+fi
+umask 077
+printf 'QDRANT_API_KEY=%s\n' "$${key}" > /opt/qdrant/.env
+cd /opt/qdrant
+docker compose up -d --force-recreate
+APPLY
+sed -i "s|__AWS_REGION__|$${AWS_REGION}|g; s|__API_KEY_PARAM__|$${API_KEY_PARAM}|g" /usr/local/bin/qdrant-apply
+chmod 0750 /usr/local/bin/qdrant-apply
+
+/usr/local/bin/qdrant-apply || echo "qdrant-apply 보류: API 키 입력 후 재실행 필요" >&2
