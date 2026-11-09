@@ -58,10 +58,18 @@ locals {
     { name = "community.post.changed", partitions = 6, config = "retention.ms=${local.msk_retention_7day}" },
     { name = "congestion.analysis.request", partitions = 6, config = "retention.ms=${local.msk_retention_1day},max.message.bytes=4194304" },
     { name = "congestion.analysis.result", partitions = 6, config = "retention.ms=${local.msk_retention_1day}" },
+    { name = "notification.push.request", partitions = 6, config = "retention.ms=${local.msk_retention_1day}" },
+    { name = "notification.bulk-push.request", partitions = 6, config = "retention.ms=${local.msk_retention_1day}" },
+    { name = "settlement.image-analysis.request", partitions = 6, config = "retention.ms=${local.msk_retention_1day}" },
+    { name = "settlement.image-analysis.result", partitions = 6, config = "retention.ms=${local.msk_retention_1day}" },
     { name = "matching.decision-dlt", partitions = 1, config = "retention.ms=${local.msk_retention_7day}" },
     { name = "community.post.changed-dlt", partitions = 1, config = "retention.ms=${local.msk_retention_7day}" },
     { name = "congestion.analysis.request-dlt", partitions = 1, config = "retention.ms=${local.msk_retention_7day},max.message.bytes=4194304" },
     { name = "congestion.analysis.result-dlt", partitions = 1, config = "retention.ms=${local.msk_retention_7day}" },
+    { name = "notification.push.request-dlt", partitions = 1, config = "retention.ms=${local.msk_retention_7day}" },
+    { name = "notification.bulk-push.request-dlt", partitions = 1, config = "retention.ms=${local.msk_retention_7day}" },
+    { name = "settlement.image-analysis.request-dlt", partitions = 1, config = "retention.ms=${local.msk_retention_7day}" },
+    { name = "settlement.image-analysis.result-dlt", partitions = 1, config = "retention.ms=${local.msk_retention_7day}" },
   ]
 
   # 중앙 Prometheus 수집 대상 (monitoring.tf). AWS 권장에 따라 수집 주기는 60초 이상으로 둔다.
