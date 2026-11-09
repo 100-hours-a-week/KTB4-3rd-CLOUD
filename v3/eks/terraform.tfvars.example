@@ -1,0 +1,23 @@
+# 복사해서 terraform.tfvars로 쓴다. terraform.tfvars는 커밋하지 않는다.
+aws_region   = "ap-northeast-2"
+aws_profile  = null
+project_name = "moyeota-v2"
+
+# V1·V2와 공유하는 VPC. 적용 전에 AWS 계정의 실제 값과 대조한다.
+vpc_id = "vpc-054f8f601f1b9f1b3"
+
+cluster_version = "1.37"
+
+# 클러스터 ENI용 2c 서브넷. VPC에서 쓰지 않는 대역이어야 한다.
+cluster_subnet_c_cidr = "10.20.50.0/24"
+
+# Kubernetes API public endpoint 허용 대역. 운영자 공인 IP의 /32로 바꾼다.
+api_public_cidrs = ["203.0.113.10/32"]
+
+stages = {
+  prod = { images_bucket = "moyeota-prod-images" }
+  stg  = { images_bucket = "moyeota-dev-images" }
+}
+
+# prod 노드 초기 대수
+prod_node_desired = 3
