@@ -1101,22 +1101,22 @@ variable "dev_backend_console_access" {
 variable "dev_backend_log_services" {
   description = "BE가 조회할 dev 로그 그룹의 서비스. exec 로그 그룹은 넣지 않는다."
   type        = list(string)
-  default     = ["rest", "websocket", "fastapi"]
+  default     = ["rest", "websocket", "fastapi", "worker", "matching"]
 
   validation {
-    condition     = alltrue([for s in var.dev_backend_log_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
-    error_message = "dev_backend_log_services may only contain rest, websocket, frontend, fastapi."
+    condition     = alltrue([for s in var.dev_backend_log_services : contains(["rest", "websocket", "frontend", "fastapi", "worker", "matching"], s)])
+    error_message = "dev_backend_log_services may only contain rest, websocket, frontend, fastapi, worker, matching."
   }
 }
 
 variable "stg_backend_log_services" {
   description = "BE가 조회할 stg 로그 그룹의 서비스. exec 로그 그룹은 넣지 않는다."
   type        = list(string)
-  default     = ["rest", "websocket", "fastapi"]
+  default     = ["rest", "websocket", "fastapi", "worker", "matching"]
 
   validation {
-    condition     = alltrue([for s in var.stg_backend_log_services : contains(["rest", "websocket", "frontend", "fastapi"], s)])
-    error_message = "stg_backend_log_services may only contain rest, websocket, frontend, fastapi."
+    condition     = alltrue([for s in var.stg_backend_log_services : contains(["rest", "websocket", "frontend", "fastapi", "worker", "matching"], s)])
+    error_message = "stg_backend_log_services may only contain rest, websocket, frontend, fastapi, worker, matching."
   }
 }
 
