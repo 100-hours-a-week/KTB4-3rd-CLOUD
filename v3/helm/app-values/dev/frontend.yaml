@@ -14,4 +14,4 @@ hpa:
 
 targetGroupBinding:
   enabled: true
-  targetGroupARN: arn:aws:elasticloadbalancing:ap-northeast-2:486152170229:targetgroup/moyeota-v3-eks-dev-frontend/58cb450b3a2665e5
+  targetGroupARN: arn:aws:elasticloadbalancing:ap-northeast-2:486152170229:targetgroup/moyeota-v3-eks-dev-frontend/0f9d4dce7255c2c2
