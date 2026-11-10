@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 앱 하나를 EKS에 배포한다.
-# 사용법: deploy-app.sh <stg|prod> <rest-api|websocket|fastapi|frontend|worker|matching> [--kafka]
+# 사용법: deploy-app.sh <dev|stg|prod> <rest-api|websocket|fastapi|frontend|worker|matching> [--kafka]
 #   --kafka: Kafka 도입 이후 이미지와 설정을 쓴다. worker, matching은 항상 적용되며 stg 전용이다.
 #   prod: CONFIRM_PROD_DEPLOY=yes가 필요하고, ALB 규칙에 EKS Target Group이 먼저 연결되어 있어야 한다.
 # 전제: terraform apply 완료, install-platform.sh 완료.
@@ -20,8 +20,8 @@ elif [ -n "${3:-}" ]; then
   exit 1
 fi
 
-if [ "$stage" != "stg" ] && [ "$stage" != "prod" ]; then
-  echo "지원하는 스테이지는 stg, prod입니다: '$stage'" >&2
+if [ "$stage" != "dev" ] && [ "$stage" != "stg" ] && [ "$stage" != "prod" ]; then
+  echo "지원하는 스테이지는 dev, stg, prod입니다: '$stage'" >&2
   exit 1
 fi
 
@@ -67,6 +67,16 @@ if [ "$stage" = "prod" ]; then
   fi
 fi
 
+# 스케줄러에 락이 없어 ECS와 EKS에서 함께 실행하면 작업이 중복된다.
+if [ "$service" = "worker" ] || [ "$service" = "matching" ]; then
+  ecs_desired="$(aws ecs describe-services --cluster "moyeota-v2-$stage" --services "$service" \
+    --query 'services[0].desiredCount' --output text)"
+  if [ "$ecs_desired" != "0" ] && [ "$ecs_desired" != "None" ]; then
+    echo "ECS $stage/$service 가 실행 중입니다(desired=$ecs_desired). ECS를 먼저 0으로 줄여야 합니다." >&2
+    exit 1
+  fi
+fi
+
 # 뒤의 파일이 앞의 값을 덮어쓴다. map(env, secrets)은 병합된다.
 args=()
 if [ "$backend" -eq 1 ]; then
@@ -77,6 +87,23 @@ if [ "$backend" -eq 1 ]; then
   args+=(--values "app-values/$stage/backend-common.yaml")
 fi
 args+=(--values "app-values/$stage/$service.yaml")
+
+# dev는 Kafka 포함 이미지만 쓰므로 overlay 없이 dev values에 값이 들어 있다. Argo CD Application과 순서가 같다.
+if [ "$stage" = "dev" ]; then
+  kafka=0
+  if [ "$backend" -eq 1 ]; then
+    digest_file="app-values/dev/backend-common.yaml"
+  else
+    digest_file="app-values/dev/$service.yaml"
+  fi
+  if grep -q "$PLACEHOLDER_DIGEST" "$digest_file"; then
+    echo "$digest_file 의 image.digest를 지정해야 합니다." >&2
+    exit 1
+  fi
+  if [ "$kafka_client" -eq 1 ]; then
+    args+=(--values app-values/dev/kafka-client.yaml)
+  fi
+fi
 
 if [ "$kafka" -eq 1 ]; then
   if [ "$backend" -eq 1 ]; then

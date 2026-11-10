@@ -1,5 +1,8 @@
 stage: stg
 
+# 2개 AZ에 노드가 있어 AZ 분산을 켠다.
+zoneSpread: true
+
 image:
   digest: sha256:d7014b87ae12627141bf2644704976cf350a2989cc39c5b840c4dc1428f27a65
 

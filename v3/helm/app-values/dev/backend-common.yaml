@@ -1,8 +1,12 @@
 # dev EKS 이미지는 CI가 dev-<sha> digest로 갱신한다.
 stage: dev
 
+# dev 파드는 non-prod 공용 노드(stage=stg)에 올리고 2개 AZ에 분산한다.
+nodeStage: stg
+zoneSpread: true
+
 image:
-  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  digest: sha256:63c708b071f18721c178bdb6eddeda9b3363b05e997dbf363b9b22f61ffdc9c2
 
 # dev Alloy 수집 경로가 아직 없다.
 metrics:
@@ -14,3 +18,4 @@ env:
 secrets:
   CONGESTION_AUTHOR_KEY_SECRET: backend/CONGESTION_AUTHOR_KEY_SECRET
   MONGODB_URI: backend/MONGODB_URI
+  GOOGLE_APPLICATION_CREDENTIALS: backend/GOOGLE_APPLICATION_CREDENTIALS

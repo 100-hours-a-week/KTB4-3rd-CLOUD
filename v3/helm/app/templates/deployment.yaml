@@ -35,20 +35,31 @@ spec:
       serviceAccountName: {{ .Values.name }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       nodeSelector:
-        stage: {{ .Values.stage }}
+        stage: {{ default .Values.stage .Values.nodeStage }}
       tolerations:
         - key: stage
           operator: Equal
-          value: {{ .Values.stage }}
+          value: {{ default .Values.stage .Values.nodeStage }}
           effect: NoSchedule
-      {{- if .Values.hostSpread }}
+      {{- if or .Values.hostSpread .Values.zoneSpread }}
       topologySpreadConstraints:
+        {{- if .Values.zoneSpread }}
+        # 한 AZ의 용량이 부족해도 배포가 멈추지 않도록 선호 조건으로 둔다.
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "app.selectorLabels" . | nindent 14 }}
+        {{- end }}
+        {{- if .Values.hostSpread }}
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
           whenUnsatisfiable: DoNotSchedule
           labelSelector:
             matchLabels:
               {{- include "app.selectorLabels" . | nindent 14 }}
+        {{- end }}
       {{- end }}
       containers:
         - name: {{ .Values.name }}

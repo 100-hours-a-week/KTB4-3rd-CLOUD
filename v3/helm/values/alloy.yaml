@@ -46,7 +46,7 @@ alloy:
 
         rule {
           source_labels = ["__meta_kubernetes_namespace"]
-          regex         = "(prod|stg)"
+          regex         = "(dev|prod|stg)"
           target_label  = "stage"
         }
 
