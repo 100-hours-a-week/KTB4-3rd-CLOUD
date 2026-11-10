@@ -11,6 +11,8 @@ locals {
     core-redis     = { sg = "moyeota-v2-prod-redis", port = 6379, node = "core" }
     core-loki      = { sg = "moyeota-v2-monitoring", port = 3100, node = "core" }
     core-otlp      = { sg = "moyeota-v2-monitoring", port = 9090, node = "core" }
+    core-msk       = { sg = "moyeota-v2-prod-msk", port = 9092, node = "core" }
+    realtime-msk   = { sg = "moyeota-v2-prod-msk", port = 9092, node = "realtime" }
     # burst는 prod 저장소 규칙을 두지 않는다. 외부 입력을 다루는 fastapi가 침해되어도 RDS, Redis에 닿지 못한다.
     burst-loki = { sg = "moyeota-v2-monitoring", port = 3100, node = "burst" }
     burst-otlp = { sg = "moyeota-v2-monitoring", port = 9090, node = "burst" }
