@@ -9,3 +9,9 @@ zoneSpread: true
 hpa:
   minReplicas: 2
   maxReplicas: 3
+
+# 혼잡도 판정 Claude 폴백과 SemIf(Modal) 폴백에 쓴다.
+secrets:
+  ANTHROPIC_API_KEY: ai/ANTHROPIC_API_KEY
+  MODAL_TOKEN_ID_2: ai/MODAL_TOKEN_ID_2
+  MODAL_TOKEN_SECRET_2: ai/MODAL_TOKEN_SECRET_2
