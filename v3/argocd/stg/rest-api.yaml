@@ -21,6 +21,7 @@ spec:
         - ../app-values/services/rest-api.yaml
         - ../app-values/stg/backend-common.yaml
         - ../app-values/stg/rest-api.yaml
+        - ../app-values/stg/kafka-client.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: stg
