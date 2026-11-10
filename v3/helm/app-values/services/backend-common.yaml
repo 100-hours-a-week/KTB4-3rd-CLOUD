@@ -1,0 +1,85 @@
+# rest-api와 websocket은 같은 BE 이미지를 APP_ROLE로 나눠 쓰고, Secret 29개가 동일하다.
+image:
+  repository: 486152170229.dkr.ecr.ap-northeast-2.amazonaws.com/moyeota/be
+
+# V2 태스크 정의와 같다. FCM JSON을 파일로 쓰고 환경변수에서 지운 뒤 java를 실행한다.
+command:
+  - sh
+  - -c
+args:
+  - >-
+    case "$FCM_SERVICE_ACCOUNT_JSON" in "{"*) umask 077 &&
+    printf '%s' "$FCM_SERVICE_ACCOUNT_JSON" > /tmp/fcm.json &&
+    export GOOGLE_APPLICATION_CREDENTIALS=/tmp/fcm.json ;; esac;
+    unset FCM_SERVICE_ACCOUNT_JSON;
+    exec java $JAVA_OPTS -jar /app/app.jar
+
+port: 8080
+managementPort: 8090
+
+metrics:
+  enabled: true
+  port: 8090
+  path: /actuator/prometheus
+
+env:
+  # CPU limit이 없어 JVM이 CPU 수를 잘못 잡지 않도록 고정한다 (Pod 설계 3.4.4).
+  JAVA_TOOL_OPTIONS: -Xms128m -Xmx512m -XX:ActiveProcessorCount=2
+  TZ: Asia/Seoul
+
+secrets:
+  ACCOUNT_ENC_KEY: backend/ACCOUNT_ENC_KEY
+  CHAT_FANOUT_CHANNEL: broker/CHAT_FANOUT_CHANNEL
+  DB_HOST: backend/DB_HOST
+  DB_NAME: backend/DB_NAME
+  DB_PASSWORD: backend/DB_PASSWORD
+  DB_PORT: backend/DB_PORT
+  DB_USERNAME: backend/DB_USERNAME
+  EXTRA_FRONT_ORIGINS: backend/EXTRA_FRONT_ORIGINS
+  FCM_SERVICE_ACCOUNT_JSON: backend/FCM_SERVICE_ACCOUNT_JSON
+  FRONT_CALLBACK_URI: backend/FRONT_CALLBACK_URI
+  FRONT_URL: backend/FRONT_URL
+  IMAGE_PUBLIC_BASE_URL: backend/IMAGE_PUBLIC_BASE_URL
+  INTERNAL_API_KEY: backend/INTERNAL_API_KEY
+  JWT_SECRET: backend/JWT_SECRET
+  KAKAO_ADMIN_KEY: backend/KAKAO_ADMIN_KEY
+  KAKAO_CLIENT_ID: backend/KAKAO_CLIENT_ID
+  KAKAO_CLIENT_SECRET: backend/KAKAO_CLIENT_SECRET
+  KAKAO_REDIRECT_URI: backend/KAKAO_REDIRECT_URI
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: backend/MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+  MANAGEMENT_ENDPOINT_PROMETHEUS_ENABLED: backend/MANAGEMENT_ENDPOINT_PROMETHEUS_ENABLED
+  MOYEOTA_AUTH_COOKIE_SAMESITE: backend/MOYEOTA_AUTH_COOKIE_SAMESITE
+  MOYEOTA_AUTH_COOKIE_SECURE: backend/MOYEOTA_AUTH_COOKIE_SECURE
+  MOYEOTA_NOTIFICATION_PUSH_ENABLED: backend/MOYEOTA_NOTIFICATION_PUSH_ENABLED
+  MOYEOTA_RELAY_ENV: backend/MOYEOTA_RELAY_ENV
+  REDIS_HOST: broker/REDIS_HOST
+  REDIS_PORT: broker/REDIS_PORT
+  S3_BUCKET: backend/S3_BUCKET
+  SERVER_FORWARD_HEADERS_STRATEGY: backend/SERVER_FORWARD_HEADERS_STRATEGY
+  SPRING_PROFILES_ACTIVE: backend/SPRING_PROFILES_ACTIVE
+
+probes:
+  # 최대 150초. V2의 시작 유예 120초에 여유를 둔 값이다.
+  startup:
+    httpGet:
+      path: /actuator/health/liveness
+      port: management
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 30
+  readiness:
+    httpGet:
+      path: /actuator/health/readiness
+      port: management
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  liveness:
+    httpGet:
+      path: /actuator/health/liveness
+      port: management
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+hostSpread: true

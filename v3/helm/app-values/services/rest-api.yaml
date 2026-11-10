@@ -1,0 +1,23 @@
+name: rest-api
+serviceName: rest
+
+env:
+  APP_ROLE: rest
+  AI_BASE_URL: http://fastapi:8000
+  # preStop 10초 + Spring 종료 15초 안에 grace 30초를 넘지 않게 한다 (Pod 설계 3.4.4).
+  SPRING_LIFECYCLE_TIMEOUTPERSHUTDOWNPHASE: 15s
+
+resources:
+  cpu: 500m
+  memory: 1024Mi
+
+preStopSeconds: 10
+terminationGracePeriodSeconds: 30
+
+hpa:
+  enabled: true
+  # V2 목표 60%는 1 vCPU의 0.6 core다. request 500m 기준으로 환산하면 120%다.
+  targetCpuUtilization: 120
+
+targetGroupBinding:
+  enabled: true

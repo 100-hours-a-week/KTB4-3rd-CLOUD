@@ -1,0 +1,37 @@
+# 차트 버전은 install-platform.sh에 고정한다. Ingress 없이 TargetGroupBinding만 쓴다.
+clusterName: moyeota-v3-eks
+region: ap-northeast-2
+# IMDS hop limit 1이라 컨트롤러가 VPC를 스스로 찾지 못한다. terraform output vpc_id와 같다.
+vpcId: vpc-054f8f601f1b9f1b3
+
+replicaCount: 2
+
+serviceAccount:
+  create: true
+  # Pod Identity 연결(v3/eks/pod_identity.tf)과 같은 이름이어야 한다.
+  name: aws-load-balancer-controller
+
+createIngressClassResource: false
+ingressClassParams:
+  create: false
+# LoadBalancer 타입 Service를 쓰지 않는다.
+enableServiceMutatorWebhook: false
+enableShield: false
+enableWaf: false
+enableWafv2: false
+
+nodeSelector:
+  role: system
+tolerations:
+  - key: CriticalAddonsOnly
+    operator: Exists
+
+podDisruptionBudget:
+  maxUnavailable: 1
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    memory: 256Mi

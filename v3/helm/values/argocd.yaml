@@ -1,0 +1,100 @@
+# 앱 Application을 동기화하는 GitOps 컨트롤러다. 같은 클러스터만 관리하므로 비HA로 둔다.
+global:
+  # UI는 kubectl port-forward로 접속한다. 외부 노출을 추가할 때 실제 도메인으로 바꾼다.
+  domain: localhost:8080
+  nodeSelector:
+    role: system
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Exists
+
+# SSO를 쓰지 않는다.
+dex:
+  enabled: false
+
+# GitHub Actions가 클러스터에 접근하지 않고 배포 결과를 알 수 있도록 커밋 상태로 기록한다.
+# 설치 전에 argocd-notifications-secret을 만들어야 한다 (v3/argocd/README.md).
+notifications:
+  enabled: true
+  secret:
+    create: false
+  notifiers:
+    service.github: |
+      appID: $github-appID
+      installationID: $github-installationID
+      privateKey: $github-privateKey
+  templates:
+    template.app-deployed: |
+      github:
+        repoURLPath: "{{.app.spec.source.repoURL}}"
+        revisionPath: "{{.app.status.operationState.syncResult.revision}}"
+        status:
+          state: success
+          label: "argocd/{{.app.metadata.name}}"
+    template.app-failed: |
+      github:
+        repoURLPath: "{{.app.spec.source.repoURL}}"
+        revisionPath: "{{.app.status.operationState.syncResult.revision}}"
+        status:
+          state: failure
+          label: "argocd/{{.app.metadata.name}}"
+  triggers:
+    trigger.on-deployed: |
+      - when: app.status.operationState != nil and app.status.operationState.phase in ['Succeeded'] and app.status.health.status == 'Healthy'
+        oncePer: app.status.operationState?.syncResult?.revision
+        send: [app-deployed]
+    trigger.on-failed: |
+      - when: app.status.operationState != nil and (app.status.operationState.phase in ['Error', 'Failed'] or app.status.health.status == 'Degraded')
+        oncePer: app.status.operationState?.syncResult?.revision
+        send: [app-failed]
+  resources:
+    requests:
+      cpu: 10m
+      memory: 96Mi
+    limits:
+      memory: 96Mi
+
+# Application을 파일로 직접 관리한다. CRD는 남기고 파드만 띄우지 않는다.
+applicationSet:
+  replicas: 0
+
+controller:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 512Mi
+
+# helm template 실행 시 메모리가 순간적으로 올라간다.
+repoServer:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 384Mi
+    limits:
+      memory: 384Mi
+
+server:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 256Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 128Mi
+
+redisSecretInit:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      memory: 64Mi

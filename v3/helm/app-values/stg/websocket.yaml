@@ -1,0 +1,6 @@
+hpa:
+  minReplicas: 2
+  maxReplicas: 3
+
+targetGroupBinding:
+  targetGroupARN: arn:aws:elasticloadbalancing:ap-northeast-2:486152170229:targetgroup/moyeota-v3-eks-stg-websocket/b1babba2235adb90

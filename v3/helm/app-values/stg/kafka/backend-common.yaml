@@ -1,0 +1,9 @@
+# Kafka 도입 이후 BE 이미지에 필요한 값. rest-api, websocket, worker, matching에 적용한다.
+image:
+  # BE #336 이후 stg release 이미지 digest로 바꿔야 한다. 이 값이면 deploy-app.sh가 중단한다.
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+secrets:
+  CONGESTION_AUTHOR_KEY_SECRET: backend/CONGESTION_AUTHOR_KEY_SECRET
+  # stg SSM에 아직 없다. 없으면 ExternalSecret 전체가 실패하므로 deploy-app.sh가 먼저 확인한다.
+  MONGODB_URI: backend/MONGODB_URI

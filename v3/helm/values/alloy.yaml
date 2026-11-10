@@ -1,0 +1,180 @@
+# 노드마다 Alloy 1개가 같은 노드의 파드 로그와 지표를 모니터링 호스트로 보낸다.
+# V2 Prometheus에는 remote write 수신이 없어 지표는 OTLP(9090)로 보낸다.
+alloy:
+  mounts:
+    varlog: true
+  securityContext:
+    # /var/log/pods를 읽기 위해 V2 Alloy와 같이 root로 실행한다.
+    runAsUser: 0
+    allowPrivilegeEscalation: false
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      memory: 256Mi
+  configMap:
+    create: true
+    content: |
+      logging {
+        level = "info"
+      }
+
+      discovery.kubernetes "pods" {
+        role = "pod"
+
+        selectors {
+          role  = "pod"
+          field = "spec.nodeName=" + sys.env("K8S_NODE_NAME")
+        }
+      }
+
+      // V2 대시보드와 같은 stage, service 라벨을 쓰고 platform으로 ECS와 구분한다.
+      discovery.relabel "common" {
+        targets = discovery.kubernetes.pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_phase"]
+          regex         = "Pending|Succeeded|Failed"
+          action        = "drop"
+        }
+
+        rule {
+          target_label = "stage"
+          replacement  = "system"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          regex         = "(prod|stg)"
+          target_label  = "stage"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "service"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          regex         = "(.+)"
+          target_label  = "service"
+        }
+
+        rule {
+          source_labels = ["service"]
+          regex         = "rest-api"
+          target_label  = "service"
+          replacement   = "rest"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+
+        rule {
+          target_label = "platform"
+          replacement  = "eks"
+        }
+      }
+
+      discovery.relabel "logs" {
+        targets = discovery.relabel.common.output
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+          separator     = "/"
+          target_label  = "__path__"
+          replacement   = "/var/log/pods/*$1/*.log"
+        }
+      }
+
+      local.file_match "pods" {
+        path_targets = discovery.relabel.logs.output
+      }
+
+      loki.source.file "pods" {
+        targets    = local.file_match.pods.targets
+        forward_to = [loki.process.cri.receiver]
+      }
+
+      loki.process "cri" {
+        forward_to = [loki.write.monitoring.receiver]
+
+        stage.cri {}
+      }
+
+      loki.write "monitoring" {
+        endpoint {
+          url = "http://10.20.43.152:3100/loki/api/v1/push"
+        }
+      }
+
+      discovery.relabel "metrics" {
+        targets = discovery.relabel.common.output
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_scrape"]
+          regex         = "true"
+          action        = "keep"
+        }
+
+        rule {
+          source_labels = ["__address__", "__meta_kubernetes_pod_annotation_prometheus_io_port"]
+          regex         = "([^:]+)(?::\\d+)?;(\\d+)"
+          target_label  = "__address__"
+          replacement   = "$1:$2"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_annotation_prometheus_io_path"]
+          regex         = "(.+)"
+          target_label  = "__metrics_path__"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "instance"
+        }
+
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+
+        rule {
+          source_labels = ["stage", "service"]
+          separator     = "-"
+          target_label  = "job"
+          replacement   = "$1-eks"
+        }
+      }
+
+      prometheus.scrape "pods" {
+        targets         = discovery.relabel.metrics.output
+        scrape_interval = "30s"
+        forward_to      = [otelcol.receiver.prometheus.default.receiver]
+      }
+
+      otelcol.receiver.prometheus "default" {
+        output {
+          metrics = [otelcol.exporter.otlphttp.monitoring.input]
+        }
+      }
+
+      otelcol.exporter.otlphttp "monitoring" {
+        client {
+          endpoint = "http://10.20.43.152:9090/api/v1/otlp"
+
+          tls {
+            insecure = true
+          }
+        }
+      }
+
+controller:
+  type: daemonset
+  # 앱 노드 taint와 관계없이 모든 노드에 배치한다.
+  tolerations:
+    - operator: Exists

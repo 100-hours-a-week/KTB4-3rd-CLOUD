@@ -1,0 +1,36 @@
+# 같은 BE 이미지. Kafka 소비, 스케줄러 10개, outbox 발행을 맡는다 (BE #336). ALB 없음.
+name: worker
+serviceName: worker
+serviceEnabled: false
+
+# ride-start·ride-end 스케줄러에 락이 없어 파드가 겹치면 중복 실행된다. 1개 고정, Recreate.
+replicas: 1
+strategy:
+  type: Recreate
+
+env:
+  APP_ROLE: worker
+  AI_BASE_URL: http://fastapi:8000
+  JAVA_TOOL_OPTIONS: -Xms128m -Xmx736m -XX:ActiveProcessorCount=2
+
+resources:
+  cpu: 500m
+  memory: 1536Mi
+
+# 트래픽을 받지 않아 readiness는 쓰지 않는다. 8090 liveness만 의미가 있다.
+probes:
+  readiness: null
+
+hostSpread: false
+
+preStopSeconds: 0
+# 자동취소 1회가 약 121초 걸린 기록을 반영한 상한이다 (Pod 설계 3.4.4). 작업이 끝나면 바로 종료한다.
+terminationGracePeriodSeconds: 150
+
+hpa:
+  enabled: false
+# replica 1이라 PDB를 두지 않는다.
+pdb:
+  enabled: false
+targetGroupBinding:
+  enabled: false

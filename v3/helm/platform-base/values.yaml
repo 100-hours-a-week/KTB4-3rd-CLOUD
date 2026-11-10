@@ -1,0 +1,37 @@
+# 앱이 올라가는 스테이지 Namespace. Pod Identity 연결(v3/eks/pod_identity.tf)의 namespace와 같아야 한다.
+stages:
+  - prod
+  - stg
+  - dev
+
+# 플랫폼 컴포넌트 Namespace. kube-system은 이미 있으므로 넣지 않는다.
+platformNamespaces:
+  - external-secrets
+  - monitoring
+
+# 스테이지마다 만드는 ServiceAccount. rest-api는 Pod Identity 연결 대상이다.
+serviceAccounts:
+  - rest-api
+  - websocket
+  - fastapi
+  - frontend
+  - worker
+  - matching
+
+networkPolicy:
+  enabled: true
+  namespace: prod
+  # ALB가 있는 public-a, public-b 서브넷. target_type=ip라 ALB ENI 주소가 출발지다.
+  albCidrs:
+    - 10.20.30.0/24
+    - 10.20.31.0/24
+  # 노드 SG의 ALB 인바운드(v3/eks/security.tf)와 같은 포트다.
+  albPorts:
+    - 8080
+    - 8090
+    - 3000
+  # Alloy가 스크랩하는 지표 포트. Spring 관리 포트와 fastapi 앱 포트다.
+  monitoringNamespace: monitoring
+  metricsPorts:
+    - 8090
+    - 8000

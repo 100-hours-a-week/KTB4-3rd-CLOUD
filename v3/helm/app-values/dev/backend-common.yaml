@@ -1,0 +1,16 @@
+# dev EKS 이미지는 CI가 dev-<sha> digest로 갱신한다.
+stage: dev
+
+image:
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+# dev Alloy 수집 경로가 아직 없다.
+metrics:
+  enabled: false
+
+env:
+  STAGE: dev
+
+secrets:
+  CONGESTION_AUTHOR_KEY_SECRET: backend/CONGESTION_AUTHOR_KEY_SECRET
+  MONGODB_URI: backend/MONGODB_URI

@@ -1,0 +1,5 @@
+# V2 prod 태스크 정의와 같은 이미지다. prod 배포 동결 기간에는 이 digest를 유지한다.
+stage: prod
+
+image:
+  digest: sha256:bc22a7d9a015ff867b1251a8a523dea9269470cb00c125ffb0745d35d332f370

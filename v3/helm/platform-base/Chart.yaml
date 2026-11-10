@@ -1,0 +1,5 @@
+apiVersion: v2
+name: platform-base
+description: Moyeota V3 EKS Namespace, ServiceAccount, prod NetworkPolicy
+type: application
+version: 0.1.0

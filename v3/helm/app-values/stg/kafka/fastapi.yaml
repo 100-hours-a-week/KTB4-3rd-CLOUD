@@ -1,0 +1,20 @@
+# Kafka 혼잡도 분석과 서버 모니터링 봇이 들어간 AI 이미지에 필요한 값이다.
+image:
+  # Kafka 소비가 들어간 stg release 이미지 digest로 바꿔야 한다. 이 값이면 deploy-app.sh가 중단한다.
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+env:
+  STAGE: stg
+  OTLP_METRICS_ENABLED: "true"
+  OTLP_METRICS_URL: http://10.20.43.152:9090/api/v1/otlp/v1/metrics
+
+secrets:
+  AI_DB_URL: ai/AI_DB_URL
+  AI_QDRANT_API_KEY: ai/AI_QDRANT_API_KEY
+  AI_QDRANT_URL: ai/AI_QDRANT_URL
+  Admin_Discord_ID: ai/Admin_Discord_ID
+  Admin_Telegram_ID: ai/Admin_Telegram_ID
+  DISCORD_BOT_TOKEN: ai/DISCORD_BOT_TOKEN
+  DISCORD_CHANNEL_ID: ai/DISCORD_CHANNEL_ID
+  KAFKA_BOOTSTRAP_SERVERS: broker/KAFKA_BOOTSTRAP_SERVERS
+  TELEGRAM_BOT_TOKEN: ai/TELEGRAM_BOT_TOKEN

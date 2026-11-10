@@ -1,0 +1,26 @@
+{{- range .Values.stages }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ . }}
+  labels:
+    stage: {{ . }}
+    app.kubernetes.io/part-of: moyeota-v3
+    # 새 파드가 Target Group에서 healthy가 된 뒤에 이전 파드를 내리도록 readiness gate를 주입한다.
+    elbv2.k8s.aws/pod-readiness-gate-inject: enabled
+  annotations:
+    # release를 지워도 Namespace 안의 앱과 Secret이 함께 삭제되지 않게 한다.
+    helm.sh/resource-policy: keep
+{{- end }}
+{{- range .Values.platformNamespaces }}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ . }}
+  labels:
+    app.kubernetes.io/part-of: moyeota-v3
+  annotations:
+    helm.sh/resource-policy: keep
+{{- end }}

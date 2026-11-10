@@ -1,0 +1,13 @@
+# 이 저장소에서 dev Namespace로만 배포한다.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: moyeota-dev
+  namespace: argocd
+spec:
+  description: V3 EKS dev 앱 배포
+  sourceRepos:
+    - https://github.com/100-hours-a-week/KTB4-3rd-CLOUD.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: dev

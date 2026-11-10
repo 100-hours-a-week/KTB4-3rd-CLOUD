@@ -1,0 +1,8 @@
+stage: stg
+
+image:
+  digest: sha256:d7014b87ae12627141bf2644704976cf350a2989cc39c5b840c4dc1428f27a65
+
+hpa:
+  minReplicas: 1
+  maxReplicas: 2
