@@ -187,7 +187,7 @@ jobs:
           app: be
           image-digest: ${{ needs.resolve.outputs.image_digest }}
           release-id: ${{ needs.resolve.outputs.promote_tag }}
-          applications: prod-rest-api prod-websocket
+          applications: prod-rest-api prod-websocket prod-worker prod-matching
           token: ${{ secrets.GITOPS_TOKEN }}
           timeout-minutes: '240'
 

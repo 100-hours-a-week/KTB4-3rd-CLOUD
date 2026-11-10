@@ -21,6 +21,7 @@ spec:
         - ../app-values/services/rest-api.yaml
         - ../app-values/prod/backend-common.yaml
         - ../app-values/prod/rest-api.yaml
+        - ../app-values/prod/kafka-client.yaml
   destination:
     server: https://kubernetes.default.svc
     namespace: prod

@@ -1,8 +1,14 @@
 stage: prod
 
 image:
-  digest: sha256:9f53c95decb50a5c33ade8415016ac9c6d39b4bbfda4a08fcdf7e843eda1e0c9
+  digest: sha256:ccb7cd8e60d95386e26a48622b1636d959d9366252834dfdc2ed2080f44b5575
+
+nodeWorkload: burst
+zoneSpread: true
 
 hpa:
-  minReplicas: 1
-  maxReplicas: 2
+  minReplicas: 2
+  maxReplicas: 3
+
+targetGroupBinding:
+  targetGroupARN: arn:aws:elasticloadbalancing:ap-northeast-2:486152170229:targetgroup/moyeota-v3-eks-prod-frontend/28a7af074d989b09

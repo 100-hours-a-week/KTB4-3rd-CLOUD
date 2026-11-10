@@ -1,0 +1,4 @@
+nodeWorkload: core
+
+# 스케줄러에 락이 없어 1개로 고정한다. ECS worker와 동시에 실행하면 안 된다.
+replicas: 1
