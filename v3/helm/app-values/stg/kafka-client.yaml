@@ -1,0 +1,6 @@
+# Kafka에 붙는 BE 서비스. rest-api, worker, matching에 적용한다.
+env:
+  MOYEOTA_TAXIPOT_MATCHING_MODE: kafka
+
+secrets:
+  KAFKA_BOOTSTRAP_SERVERS: broker/KAFKA_BOOTSTRAP_SERVERS

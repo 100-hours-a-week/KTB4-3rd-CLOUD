@@ -1,0 +1,32 @@
+# release/* 흐름의 digest 커밋을 자동으로 동기화한다.
+# values 순서는 deploy-app.sh와 같다. Application을 지워도 앱이 남도록 finalizer를 두지 않는다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: stg-matching
+  namespace: argocd
+  annotations:
+    notifications.argoproj.io/subscribe.on-deployed.github-status: ""
+    notifications.argoproj.io/subscribe.on-failed.github-status: ""
+spec:
+  project: moyeota-stg
+  source:
+    repoURL: https://github.com/100-hours-a-week/KTB4-3rd-CLOUD.git
+    targetRevision: main
+    path: v3/helm/app
+    helm:
+      releaseName: matching
+      valueFiles:
+        - ../app-values/services/backend-common.yaml
+        - ../app-values/services/matching.yaml
+        - ../app-values/stg/backend-common.yaml
+        - ../app-values/stg/matching.yaml
+        - ../app-values/stg/kafka-client.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: stg
+  syncPolicy:
+    # 삭제는 사람이 확인한다. 전환 스크립트의 수동 변경을 되돌리지 않도록 selfHeal을 끈다.
+    automated:
+      prune: false
+      selfHeal: false

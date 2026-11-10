@@ -81,7 +81,7 @@ jobs:
           app: be
           image-digest: ${{ steps.release.outputs.image_digest }}
           release-id: ${{ steps.release.outputs.image_tag }}
-          applications: stg-rest-api stg-websocket
+          applications: stg-rest-api stg-websocket stg-worker stg-matching
           token: ${{ secrets.GITOPS_TOKEN }}
           timeout-minutes: '40'
 

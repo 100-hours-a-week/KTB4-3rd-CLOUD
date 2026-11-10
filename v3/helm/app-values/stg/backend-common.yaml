@@ -5,7 +5,8 @@ stage: stg
 zoneSpread: true
 
 image:
-  digest: sha256:559487754805faf69b079114656d14d9b2f70c92a459f40763340fa2bb46b356
+  # rc-v2.1.0-3c53572. BE #336 이후 Kafka 포함 이미지다.
+  digest: sha256:ba955b3cd8ba6f841e3d9f05d5936c1d568db3243d1582bfb1a29c8d8841e92b
 
 # 앱이 OTLP로 직접 보내므로 Alloy 스크랩을 끈다.
 metrics:
@@ -18,3 +19,5 @@ env:
 
 secrets:
   GOOGLE_APPLICATION_CREDENTIALS: backend/GOOGLE_APPLICATION_CREDENTIALS
+  CONGESTION_AUTHOR_KEY_SECRET: backend/CONGESTION_AUTHOR_KEY_SECRET
+  MONGODB_URI: backend/MONGODB_URI

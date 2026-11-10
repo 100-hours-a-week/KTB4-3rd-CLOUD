@@ -39,7 +39,7 @@ GitHub Actions는 클러스터에 접근하지 않는다. Argo CD Notifications�
 
 `kubectl apply -f projects/stg.yaml -f stg/`로 적용한다. 적용 즉시 자동 sync가 시작된다. 인수 후에는 stg에서 `deploy-app.sh`를 쓰지 않고, Helm 릴리스 기록 Secret(`sh.helm.release.v1.<서비스>.*`)만 지운다. `helm uninstall`은 리소스까지 삭제한다.
 
-stg worker와 matching은 Kafka 이미지 digest로 바꿀 때 함께 추가한다. ECS stg의 두 서비스를 0으로 줄이기 전에 적용하면 스케줄러가 중복 실행된다.
+stg BE는 Kafka 포함 이미지를 쓴다. ECS stg의 worker와 matching을 0으로 줄인 뒤에 적용한다. 먼저 적용하면 스케줄러가 중복 실행된다. 이후 rest-api, websocket, worker, matching을 `deploy-app.sh`로 배포하지 않는다.
 
 ### prod
 
