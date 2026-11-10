@@ -5,7 +5,7 @@ stage: prod
 zoneSpread: true
 
 image:
-  digest: sha256:bc22a7d9a015ff867b1251a8a523dea9269470cb00c125ffb0745d35d332f370
+  digest: sha256:0a3085360edc6bd61aead3835ef9aff3c88af6c26e9dc375234167fd558a892b
 
 secrets:
   CONGESTION_AUTHOR_KEY_SECRET: backend/CONGESTION_AUTHOR_KEY_SECRET
