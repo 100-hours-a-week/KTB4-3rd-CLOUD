@@ -1,3 +1,8 @@
+nodeWorkload: realtime
+
 hpa:
   minReplicas: 2
   maxReplicas: 4
+
+targetGroupBinding:
+  targetGroupARN: arn:aws:elasticloadbalancing:ap-northeast-2:486152170229:targetgroup/moyeota-v3-eks-prod-websocket/07fa6e2c7e506ee3

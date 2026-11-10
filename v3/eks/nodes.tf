@@ -1,38 +1,64 @@
-# 노드 그룹은 권한 경계다. SG는 security.tf, IAM Role은 iam.tf에 그룹별로 분리되어 있다.
+# SG는 security.tf, IAM Role은 iam.tf에 access 값별로 분리되어 있다.
+# 노드 그룹은 프로비저닝 단위이고 AZ별로 하나씩 둔다. 장애가 난 역할과 AZ를 노드 그룹 이름으로 바로 알 수 있다.
+# 2a와 2c는 같은 구성이다. system과 stg는 기존 그룹을 교체하지 않으려고 2a 그룹 이름을 그대로 쓴다.
 locals {
-  node_groups = {
-    system = {
-      subnet_id      = data.aws_subnet.app.id
-      capacity_type  = "ON_DEMAND"
-      instance_types = ["t3.medium"]
-      desired        = 2
-      min            = 2
-      max            = 3
-      labels         = { role = "system" }
-      taints         = [{ key = "CriticalAddonsOnly", value = "true", effect = "NO_SCHEDULE" }]
-    }
-    prod = {
-      subnet_id      = data.aws_subnet.app.id
-      capacity_type  = "ON_DEMAND"
-      instance_types = ["t3.medium"]
-      desired        = var.prod_node_desired
-      min            = var.prod_node_desired
-      max            = 5
-      labels         = { stage = "prod" }
-      taints         = [{ key = "stage", value = "prod", effect = "NO_SCHEDULE" }]
-    }
-    # Spot 쿼터는 On-Demand와 별도다. 필요 메모리 5,632MiB라 2대로는 롤링 여유가 없어 3대로 시작한다.
-    stg = {
-      subnet_id      = data.aws_subnet.dev.id
-      capacity_type  = "SPOT"
-      instance_types = ["t3.medium", "t3a.medium", "m5.large", "m5a.large", "m6i.large", "c5.large", "c6i.large"]
-      desired        = 3
-      min            = 0
-      max            = 4
-      labels         = { stage = "stg" }
-      taints         = [{ key = "stage", value = "stg", effect = "NO_SCHEDULE" }]
-    }
+  spot_instance_types = ["t3.medium", "t3a.medium", "m5.large", "m5a.large", "m6i.large", "c5.large", "c6i.large"]
+
+  app_subnets = {
+    a = data.aws_subnet.app.id
+    c = aws_subnet.cluster_c.id
   }
+
+  # 역할별 AZ당 구성. realtime: 연결 유지, core: API와 단일 실행 워커, burst: 재시도로 복구되는 무상태 서비스.
+  prod_workloads = {
+    realtime = { capacity_type = "ON_DEMAND", instance_types = ["t3.medium"], desired = 1, min = 1, max = 2 }
+    core     = { capacity_type = "ON_DEMAND", instance_types = ["t3.medium"], desired = 2, min = 2, max = 3 }
+    burst    = { capacity_type = "SPOT", instance_types = local.spot_instance_types, desired = 1, min = 1, max = 2 }
+  }
+
+  prod_node_groups = merge([
+    for workload, spec in local.prod_workloads : {
+      for az, subnet_id in local.app_subnets : "${workload}-${az}" => merge(spec, {
+        access    = workload
+        subnet_id = subnet_id
+        labels    = { stage = "prod", workload = workload }
+        taints = [
+          { key = "stage", value = "prod", effect = "NO_SCHEDULE" },
+          { key = "workload", value = workload, effect = "NO_SCHEDULE" },
+        ]
+      })
+    }
+  ]...)
+
+  system_group = {
+    access         = "system"
+    capacity_type  = "ON_DEMAND"
+    instance_types = ["t3.medium"]
+    desired        = 1
+    min            = 1
+    max            = 3
+    labels         = { role = "system" }
+    taints         = [{ key = "CriticalAddonsOnly", value = "true", effect = "NO_SCHEDULE" }]
+  }
+
+  # stage=stg 노드는 non-prod 공용이다. dev 파드도 nodeStage 값으로 여기에 올라간다.
+  nonprod_group = {
+    access         = "stg"
+    capacity_type  = "SPOT"
+    instance_types = local.spot_instance_types
+    desired        = 3
+    min            = 0
+    max            = 4
+    labels         = { stage = "stg" }
+    taints         = [{ key = "stage", value = "stg", effect = "NO_SCHEDULE" }]
+  }
+
+  node_groups = merge(local.prod_node_groups, {
+    system   = merge(local.system_group, { subnet_id = local.app_subnets.a })
+    system-c = merge(local.system_group, { subnet_id = local.app_subnets.c })
+    stg      = merge(local.nonprod_group, { subnet_id = data.aws_subnet.dev.id })
+    stg-c    = merge(local.nonprod_group, { subnet_id = aws_subnet.dev_c.id })
+  })
 }
 
 resource "aws_launch_template" "node" {
@@ -44,7 +70,7 @@ resource "aws_launch_template" "node" {
   # 커스텀 SG를 지정하면 클러스터 SG가 자동으로 붙지 않으므로 함께 넣는다.
   vpc_security_group_ids = [
     aws_eks_cluster.this.vpc_config[0].cluster_security_group_id,
-    aws_security_group.node[each.key].id,
+    aws_security_group.node[each.value.access].id,
   ]
 
   block_device_mappings {
@@ -77,7 +103,7 @@ resource "aws_eks_node_group" "this" {
 
   cluster_name    = aws_eks_cluster.this.name
   node_group_name = each.key
-  node_role_arn   = aws_iam_role.node[each.key].arn
+  node_role_arn   = aws_iam_role.node[each.value.access].arn
   subnet_ids      = [each.value.subnet_id]
   capacity_type   = each.value.capacity_type
   instance_types  = each.value.instance_types

@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# stg MongoDB 호스트 부트스트랩 (mongodb.tf, Amazon Linux 2023)
+#   1) Docker 설치  2) 데이터 EBS 포맷·마운트  3) mongodb-apply 실행
+#   데이터 EBS는 인스턴스 생성 뒤에 연결되므로 최대 5분 기다린다.
+set -Eeuo pipefail
+exec > >(tee /var/log/mongodb-bootstrap.log | logger -t mongodb-bootstrap -s 2>/dev/console) 2>&1
+
+DATA_MOUNT="/mnt/mongodb"
+APP_DIR="/opt/mongodb"
+
+dnf install -y docker xfsprogs openssl
+systemctl enable --now docker
+systemctl enable --now amazon-ssm-agent
+
+root_source="$(findmnt -n -o SOURCE /)"
+root_disk="$(lsblk -no PKNAME "$${root_source}" 2>/dev/null || true)"
+data_device=""
+for _ in $(seq 1 60); do
+  while read -r candidate candidate_type; do
+    [[ "$${candidate_type}" == "disk" ]] || continue
+    [[ "$(basename "$${candidate}")" == "$${root_disk}" ]] && continue
+    data_device="$${candidate}"
+    break
+  done < <(lsblk -dnpo NAME,TYPE)
+  [[ -n "$${data_device}" ]] && break
+  sleep 5
+done
+if [[ -z "$${data_device}" ]]; then
+  echo "MongoDB data EBS did not appear within 300 seconds" >&2
+  exit 1
+fi
+
+install -d -m 0750 "$${DATA_MOUNT}"
+if ! blkid "$${data_device}" >/dev/null 2>&1; then
+  mkfs.xfs -f "$${data_device}"
+fi
+data_uuid="$(blkid -s UUID -o value "$${data_device}")"
+grep -q "UUID=$${data_uuid} $${DATA_MOUNT} " /etc/fstab || \
+  echo "UUID=$${data_uuid} $${DATA_MOUNT} xfs defaults,nofail 0 2" >> /etc/fstab
+mountpoint -q "$${DATA_MOUNT}" || mount "$${DATA_MOUNT}"
+install -d -m 0755 "$${DATA_MOUNT}/db"
+
+install -d -m 0750 "$${APP_DIR}"
+cat >"$${APP_DIR}/init-app-user.js" <<'JS'
+const appDb = db.getSiblingDB("moyeota");
+const spec = { pwd: process.env.MOYEOTA_APP_PASSWORD, roles: [{ role: "readWrite", db: "moyeota" }] };
+if (appDb.getUser("moyeota")) {
+  appDb.updateUser("moyeota", spec);
+} else {
+  appDb.createUser({ user: "moyeota", ...spec });
+}
+JS
+
+cat >/usr/local/bin/mongodb-apply <<'APPLY'
+#!/usr/bin/env bash
+# 비밀번호가 없으면 만들어 SSM에 저장하고, 컨테이너와 앱 계정, MONGODB_URI를 맞춘다. 다시 실행해도 된다.
+set -Eeuo pipefail
+export AWS_DEFAULT_REGION="__AWS_REGION__"
+
+ensure_password() {
+  local name="$1" value
+  value="$(aws ssm get-parameter --name "$${name}" --with-decryption --query Parameter.Value --output text)"
+  if [[ -z "$${value}" || "$${value}" == "CHANGE_ME" ]]; then
+    value="$(openssl rand -hex 32)"
+    aws ssm put-parameter --name "$${name}" --type SecureString --overwrite --value "$${value}" >/dev/null
+  fi
+  printf '%s' "$${value}"
+}
+
+root_password="$(ensure_password "__ROOT_PARAM__")"
+app_password="$(ensure_password "__APP_PARAM__")"
+
+umask 077
+printf 'MONGO_INITDB_ROOT_USERNAME=root\nMONGO_INITDB_ROOT_PASSWORD=%s\nMOYEOTA_APP_PASSWORD=%s\nTZ=Asia/Seoul\n' \
+  "$${root_password}" "$${app_password}" > /opt/mongodb/.env
+
+# 컨테이너가 이미 있으면 그대로 시작한다. 이미지를 바꿀 때는 운영자가 컨테이너를 교체한다.
+if docker inspect mongo >/dev/null 2>&1; then
+  docker start mongo >/dev/null
+else
+  docker run -d --name mongo --restart always \
+    --env-file /opt/mongodb/.env \
+    -p 27017:27017 \
+    -v /mnt/mongodb/db:/data/db \
+    -v /opt/mongodb/init-app-user.js:/opt/init-app-user.js:ro \
+    --memory 1536m \
+    --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep -q 1" \
+    --health-interval 10s --health-timeout 5s --health-retries 12 \
+    --log-driver json-file --log-opt max-size=10m --log-opt max-file=5 \
+    "__IMAGE__" --wiredTigerCacheSizeGB 0.5
+fi
+
+for _ in $(seq 1 60); do
+  [[ "$(docker inspect -f '{{.State.Health.Status}}' mongo)" == "healthy" ]] && break
+  sleep 5
+done
+[[ "$(docker inspect -f '{{.State.Health.Status}}' mongo)" == "healthy" ]]
+
+docker exec mongo sh -c 'mongosh --quiet -u root -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin /opt/init-app-user.js'
+
+token="$(curl -fsS -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60')"
+private_ip="$(curl -fsS -H "X-aws-ec2-metadata-token: $${token}" http://169.254.169.254/latest/meta-data/local-ipv4)"
+uri="mongodb://moyeota:$${app_password}@$${private_ip}:27017/moyeota?authSource=moyeota"
+aws ssm put-parameter --name "__URI_PARAM__" --type SecureString --overwrite --value "$${uri}" >/dev/null
+echo "mongodb-apply 완료"
+APPLY
+sed -i "s|__AWS_REGION__|${aws_region}|g; s|__ROOT_PARAM__|${root_password_param}|g; s|__APP_PARAM__|${app_password_param}|g; s|__URI_PARAM__|${uri_param}|g; s|__IMAGE__|${mongodb_image}|g" /usr/local/bin/mongodb-apply
+chmod 0750 /usr/local/bin/mongodb-apply
+
+/usr/local/bin/mongodb-apply

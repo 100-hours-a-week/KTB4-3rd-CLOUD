@@ -36,11 +36,20 @@ spec:
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       nodeSelector:
         stage: {{ default .Values.stage .Values.nodeStage }}
+        {{- with .Values.nodeWorkload }}
+        workload: {{ . }}
+        {{- end }}
       tolerations:
         - key: stage
           operator: Equal
           value: {{ default .Values.stage .Values.nodeStage }}
           effect: NoSchedule
+        {{- with .Values.nodeWorkload }}
+        - key: workload
+          operator: Equal
+          value: {{ . }}
+          effect: NoSchedule
+        {{- end }}
       {{- if or .Values.hostSpread .Values.zoneSpread }}
       topologySpreadConstraints:
         {{- if .Values.zoneSpread }}

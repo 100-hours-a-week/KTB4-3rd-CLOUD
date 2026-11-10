@@ -3,6 +3,9 @@ stage: prod
 image:
   digest: sha256:ed616cc76998ff07d223e77c18805471782fd063dd0bb652c96dfd00d3148bd2
 
+nodeWorkload: burst
+zoneSpread: true
+
 hpa:
-  minReplicas: 1
-  maxReplicas: 2
+  minReplicas: 2
+  maxReplicas: 3

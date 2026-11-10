@@ -3,6 +3,8 @@ name: sample
 stage: stg
 # 파드를 올릴 노드의 stage 라벨. 비우면 stage 값을 쓴다. dev는 non-prod 공용 노드(stg)를 쓴다.
 nodeStage: ""
+# prod 파드를 올릴 노드 그룹 역할(realtime, core, burst). 비우면 stage 라벨만 쓴다.
+nodeWorkload: ""
 # Kubernetes Service 이름. websocket이 http://rest:8080, rest가 http://fastapi:8000으로 호출한다.
 serviceName: sample
 # 호출받지 않는 worker, matching은 false.

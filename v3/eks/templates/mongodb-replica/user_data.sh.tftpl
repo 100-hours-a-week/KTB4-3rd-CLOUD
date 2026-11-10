@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# prod MongoDB 레플리카 셋 부트스트랩 (mongodb_prod.tf, Amazon Linux 2023)
+#   첫 번째 노드만 비밀값을 만들고 rs.initiate를 실행한다. 나머지는 비밀값이 준비되길 기다린다.
+set -Eeuo pipefail
+exec > >(tee /var/log/mongodb-bootstrap.log | logger -t mongodb-bootstrap -s 2>/dev/console) 2>&1
+
+export AWS_DEFAULT_REGION="${aws_region}"
+NODE_INDEX="${node_index}"
+HOSTS="${hosts}"
+IMAGE="${image}"
+ROOT_PARAM="${root_password_param}"
+APP_PARAM="${app_password_param}"
+KEYFILE_PARAM="${keyfile_param}"
+URI_PARAM="${uri_param}"
+DATA_MOUNT="/mnt/mongodb"
+APP_DIR="/opt/mongodb"
+
+dnf install -y docker xfsprogs openssl
+systemctl enable --now docker
+systemctl enable --now amazon-ssm-agent
+
+root_source="$(findmnt -n -o SOURCE /)"
+root_disk="$(lsblk -no PKNAME "$root_source" 2>/dev/null || true)"
+data_device=""
+for _ in $(seq 1 60); do
+  while read -r candidate candidate_type; do
+    [[ "$candidate_type" == "disk" ]] || continue
+    [[ "$(basename "$candidate")" == "$root_disk" ]] && continue
+    data_device="$candidate"
+    break
+  done < <(lsblk -dnpo NAME,TYPE)
+  [[ -n "$data_device" ]] && break
+  sleep 5
+done
+[[ -n "$data_device" ]] || { echo "MongoDB data EBS did not appear within 300 seconds" >&2; exit 1; }
+
+install -d -m 0750 "$DATA_MOUNT"
+blkid "$data_device" >/dev/null 2>&1 || mkfs.xfs -f "$data_device"
+data_uuid="$(blkid -s UUID -o value "$data_device")"
+grep -q "UUID=$data_uuid $DATA_MOUNT " /etc/fstab || \
+  echo "UUID=$data_uuid $DATA_MOUNT xfs defaults,nofail 0 2" >> /etc/fstab
+mountpoint -q "$DATA_MOUNT" || mount "$DATA_MOUNT"
+install -d -m 0755 "$DATA_MOUNT/db"
+chown -R 999:999 "$DATA_MOUNT/db"
+install -d -m 0750 "$APP_DIR"
+
+get_param() { aws ssm get-parameter --name "$1" --with-decryption --query Parameter.Value --output text; }
+
+ensure_param() {
+  local name="$1" generator="$2" value
+  value="$(get_param "$name")"
+  if [[ -z "$value" || "$value" == "CHANGE_ME" ]]; then
+    value="$($generator)"
+    aws ssm put-parameter --name "$name" --type SecureString --overwrite --value "$value" >/dev/null
+  fi
+  printf '%s' "$value"
+}
+
+wait_param() {
+  local name="$1" value
+  for _ in $(seq 1 120); do
+    value="$(get_param "$name")"
+    if [[ -n "$value" && "$value" != "CHANGE_ME" ]]; then
+      printf '%s' "$value"
+      return 0
+    fi
+    sleep 5
+  done
+  echo "$name 값이 준비되지 않았습니다." >&2
+  return 1
+}
+
+new_password() { openssl rand -hex 32; }
+new_keyfile() { openssl rand -base64 756 | tr -d '\n'; }
+
+umask 077
+if [[ "$NODE_INDEX" == "0" ]]; then
+  root_password="$(ensure_param "$ROOT_PARAM" new_password)"
+  app_password="$(ensure_param "$APP_PARAM" new_password)"
+  keyfile="$(ensure_param "$KEYFILE_PARAM" new_keyfile)"
+  printf 'MONGO_INITDB_ROOT_USERNAME=root\nMONGO_INITDB_ROOT_PASSWORD=%s\nMOYEOTA_APP_PASSWORD=%s\nTZ=Asia/Seoul\n' \
+    "$root_password" "$app_password" > "$APP_DIR/.env"
+else
+  keyfile="$(wait_param "$KEYFILE_PARAM")"
+  printf 'TZ=Asia/Seoul\n' > "$APP_DIR/.env"
+fi
+printf '%s\n' "$keyfile" > "$APP_DIR/keyfile"
+chown 999:999 "$APP_DIR/keyfile"
+chmod 0400 "$APP_DIR/keyfile"
+chmod 0755 "$APP_DIR"
+
+aws ecr get-login-password | docker login --username AWS --password-stdin "$${IMAGE%%/*}"
+
+if ! docker inspect mongo >/dev/null 2>&1; then
+  docker run -d --name mongo --restart always --network host \
+    --env-file "$APP_DIR/.env" \
+    -v "$DATA_MOUNT/db:/data/db" \
+    -v "$APP_DIR/keyfile:/etc/mongo/keyfile:ro" \
+    --memory 3g \
+    --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep -q 1" \
+    --health-interval 10s --health-timeout 5s --health-retries 12 \
+    --log-driver json-file --log-opt max-size=10m --log-opt max-file=5 \
+    "$IMAGE" mongod --replSet rs0 --keyFile /etc/mongo/keyfile --bind_ip_all --wiredTigerCacheSizeGB 1
+fi
+
+for _ in $(seq 1 60); do
+  [[ "$(docker inspect -f '{{.State.Health.Status}}' mongo)" == "healthy" ]] && break
+  sleep 5
+done
+[[ "$(docker inspect -f '{{.State.Health.Status}}' mongo)" == "healthy" ]]
+
+[[ "$NODE_INDEX" == "0" ]] || { echo "레플리카 멤버 준비 완료"; exit 0; }
+
+for host in $HOSTS; do
+  for _ in $(seq 1 120); do
+    timeout 3 bash -c "exec 3<>/dev/tcp/$host/27017" 2>/dev/null && break
+    sleep 5
+  done
+  timeout 3 bash -c "exec 3<>/dev/tcp/$host/27017"
+done
+
+members=""
+id=0
+for host in $HOSTS; do
+  members="$members{_id: $id, host: \"$host:27017\"},"
+  id=$((id + 1))
+done
+
+cat > "$APP_DIR/rs-init.js" <<JS
+let initialized = true;
+try { rs.status(); } catch (e) { if (e.code === 94) { initialized = false; } else { throw e; } }
+if (!initialized) { rs.initiate({_id: "rs0", members: [$members]}); }
+for (let i = 0; i < 120 && !db.hello().isWritablePrimary; i++) { sleep(1000); }
+if (!db.hello().isWritablePrimary) { throw new Error("primary not elected"); }
+const appDb = db.getSiblingDB("moyeota");
+const spec = { pwd: process.env.MOYEOTA_APP_PASSWORD, roles: [{ role: "readWrite", db: "moyeota" }] };
+if (appDb.getUser("moyeota")) { appDb.updateUser("moyeota", spec); } else { appDb.createUser({ user: "moyeota", ...spec }); }
+JS
+chmod 0644 "$APP_DIR/rs-init.js"
+docker cp "$APP_DIR/rs-init.js" mongo:/tmp/rs-init.js
+docker exec mongo sh -c 'mongosh --quiet -u root -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin /tmp/rs-init.js'
+docker exec mongo rm -f /tmp/rs-init.js
+
+seeds="$(for host in $HOSTS; do printf '%s:27017,' "$host"; done)"
+uri="mongodb://moyeota:$app_password@$${seeds%,}/moyeota?replicaSet=rs0&authSource=moyeota"
+aws ssm put-parameter --name "$URI_PARAM" --type SecureString --overwrite --value "$uri" >/dev/null
+echo "레플리카 셋 초기화 완료"
