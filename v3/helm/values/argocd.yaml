@@ -47,7 +47,8 @@ notifications:
         oncePer: app.status.operationState?.syncResult?.revision
         send: [app-deployed]
     trigger.on-failed: |
-      - when: app.status.operationState != nil and (app.status.operationState.phase in ['Error', 'Failed'] or app.status.health.status == 'Degraded')
+      # 롤아웃 중 HPA 지표가 없으면 Degraded가 잠깐 나타나므로 sync 실패만 실패로 기록한다.
+      - when: app.status.operationState != nil and app.status.operationState.phase in ['Error', 'Failed']
         oncePer: app.status.operationState?.syncResult?.revision
         send: [app-failed]
   resources:
