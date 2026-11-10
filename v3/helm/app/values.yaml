@@ -1,6 +1,8 @@
 # 기본값은 helm lint·template 검증용이다. 실제 값은 v3/helm/app-values에서 덮어쓴다.
 name: sample
 stage: stg
+# 파드를 올릴 노드의 stage 라벨. 비우면 stage 값을 쓴다. dev는 non-prod 공용 노드(stg)를 쓴다.
+nodeStage: ""
 # Kubernetes Service 이름. websocket이 http://rest:8080, rest가 http://fastapi:8000으로 호출한다.
 serviceName: sample
 # 호출받지 않는 worker, matching은 false.
@@ -54,6 +56,9 @@ terminationGracePeriodSeconds: 30
 
 # 같은 서비스 파드를 노드에 고르게 분산한다. V2 distinct_instance 대체.
 hostSpread: false
+
+# 같은 서비스 파드를 AZ에 고르게 분산한다. 2개 AZ에 노드가 있는 스테이지에서 켠다.
+zoneSpread: false
 
 # hpa.enabled가 false일 때만 사용한다.
 replicas: 1

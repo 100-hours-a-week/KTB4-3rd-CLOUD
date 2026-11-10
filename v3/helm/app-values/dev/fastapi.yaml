@@ -1,8 +1,12 @@
 stage: dev
 
+# dev 파드는 non-prod 공용 노드(stage=stg)에 올리고 2개 AZ에 분산한다.
+nodeStage: stg
+zoneSpread: true
+
 # dev EKS 이미지는 CI가 dev-<sha> digest로 갱신한다.
 image:
-  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+  digest: sha256:71e36e43d4805be5e9fe14514e077faec2bfe0931f9bd080ba4423961a8fc04e
 
 hpa:
   minReplicas: 1

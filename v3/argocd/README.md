@@ -41,6 +41,8 @@ GitHub Actions는 클러스터에 접근하지 않는다. Argo CD Notifications�
 
 `kubectl apply -f projects/stg.yaml -f stg/`로 적용한다. 적용 즉시 자동 sync가 시작된다. 인수 후에는 stg에서 `deploy-app.sh`를 쓰지 않고, Helm 릴리스 기록 Secret(`sh.helm.release.v1.<서비스>.*`)만 지운다. `helm uninstall`은 리소스까지 삭제한다.
 
+stg worker와 matching은 Kafka 이미지 digest로 바꿀 때 함께 추가한다. ECS stg의 두 서비스를 0으로 줄이기 전에 적용하면 스케줄러가 중복 실행된다.
+
 ### prod
 
 전환이 끝난 뒤 적용한다. 그 전까지는 `deploy-app.sh`로 배포한다.
@@ -51,11 +53,4 @@ GitHub Actions는 클러스터에 접근하지 않는다. Argo CD Notifications�
 
 ### dev
 
-Terraform 작업이 끝나야 적용할 수 있다.
-
-- `stages`에 dev 추가 (rest Role, Pod Identity, SSM 읽기, Target Group)
-- `stage=dev` 노드 그룹과 노드 SG
-- dev 데이터 저장소(MySQL, Redis, MongoDB, Kafka) 인바운드 규칙
-- dev ALB 규칙. 그 뒤 `app-values/dev`의 `targetGroupBinding`을 켠다.
-- `install-platform.sh` 재실행으로 dev Namespace와 SecretStore 생성
-- `app-values/dev`를 V2 dev 태스크 정의와 대조. digest는 첫 CI 전까지 placeholder다.
+dev 파드는 `nodeStage: stg`로 non-prod 공용 노드에 올라간다. `kubectl apply -f projects/dev.yaml -f dev/`로 적용한다. worker와 matching은 ECS 서비스를 0으로 줄인 뒤에 적용한다.

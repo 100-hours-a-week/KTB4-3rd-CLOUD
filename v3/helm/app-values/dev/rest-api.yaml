@@ -2,6 +2,6 @@ hpa:
   minReplicas: 1
   maxReplicas: 2
 
-# dev Target Group이 생기면 켜고 ARN을 넣는다.
 targetGroupBinding:
-  enabled: false
+  enabled: true
+  targetGroupARN: arn:aws:elasticloadbalancing:ap-northeast-2:486152170229:targetgroup/moyeota-v3-eks-dev-rest/08a201b5667b6cbf

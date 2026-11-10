@@ -182,3 +182,10 @@ V2에서 Kafka 도입 뒤 dev에 적용된 구성을 옮겼다. 현재 stg·prod
 6. `deploy-app.sh stg websocket`
 7. `deploy-app.sh stg frontend`
 8. `X-Moyeota-Target: eks` 헤더로 stg 경로 검증
+
+## dev·stg 추가 구성
+
+- **dev 노드:** dev 파드는 `nodeStage: stg`로 non-prod 공용 노드(`stage=stg`)에 올린다. dev와 stg는 같은 노드 SG를 쓰므로 저장소 분리는 환경별 계정으로 한다.
+- **2c 노드:** `stg-c` 노드 그룹과 `dev-c` 서브넷을 추가했고, `zoneSpread`로 파드를 AZ에 고르게 분산한다. NAT는 2a를 함께 쓴다.
+- **stg MongoDB:** `v3/eks/mongodb.tf`. `dev-a`의 전용 EC2이고, 비밀번호와 `MONGODB_URI`는 호스트가 만들어 SSM에 저장한다. dev는 기존 dev EC2를 쓴다.
+- **worker·matching:** ECS에서 실행 중이면 스케줄러가 중복되므로 `deploy-app.sh`가 중단한다. ECS를 0으로 줄인 뒤 배포한다. Argo CD Application은 이 검사를 거치지 않으므로 `argocd/dev/worker.yaml`, `matching.yaml`도 같은 순서로 적용한다.

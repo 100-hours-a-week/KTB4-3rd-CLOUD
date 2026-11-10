@@ -1,6 +1,9 @@
 # V2 stg 태스크 정의와 같은 값이다. prod 태스크에는 없다.
 stage: stg
 
+# 2개 AZ에 노드가 있어 AZ 분산을 켠다.
+zoneSpread: true
+
 image:
   digest: sha256:559487754805faf69b079114656d14d9b2f70c92a459f40763340fa2bb46b356
 
