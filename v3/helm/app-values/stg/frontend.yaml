@@ -4,7 +4,7 @@ stage: stg
 zoneSpread: true
 
 image:
-  digest: sha256:c98f17b0f3fb667c56fce894cfd19ac12a327b56eb7e926da4fc858643815bf7
+  digest: sha256:31ea9c2748d81fc06f1c776d2764511ef2c465619c31fc113f8732cdfffd1ae7
 
 hpa:
   minReplicas: 1
