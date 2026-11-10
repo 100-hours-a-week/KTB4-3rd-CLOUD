@@ -6,7 +6,7 @@ zoneSpread: true
 
 image:
   # rc-v2.1.0-3c53572. BE #336 이후 Kafka 포함 이미지다.
-  digest: sha256:ba955b3cd8ba6f841e3d9f05d5936c1d568db3243d1582bfb1a29c8d8841e92b
+  digest: sha256:0a3085360edc6bd61aead3835ef9aff3c88af6c26e9dc375234167fd558a892b
 
 # 앱이 OTLP로 직접 보내므로 Alloy 스크랩을 끈다.
 metrics:
