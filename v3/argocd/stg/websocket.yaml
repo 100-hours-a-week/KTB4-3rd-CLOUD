@@ -6,8 +6,8 @@ metadata:
   name: stg-websocket
   namespace: argocd
   annotations:
-    notifications.argoproj.io/subscribe.on-deployed.github: ""
-    notifications.argoproj.io/subscribe.on-failed.github: ""
+    notifications.argoproj.io/subscribe.on-deployed.github-status: ""
+    notifications.argoproj.io/subscribe.on-failed.github-status: ""
 spec:
   project: moyeota-stg
   source:

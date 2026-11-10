@@ -180,15 +180,6 @@ jobs:
       url: https://moyeota.com
 
     steps:
-      - name: Create GitOps token
-        id: gitops-token
-        uses: actions/create-github-app-token@v2
-        with:
-          app-id: ${{ secrets.GITOPS_APP_ID }}
-          private-key: ${{ secrets.GITOPS_APP_PRIVATE_KEY }}
-          owner: ${{ github.repository_owner }}
-          repositories: KTB4-3rd-CLOUD
-
       - name: Checkout deploy action
         uses: actions/checkout@v4
         with:
@@ -203,7 +194,7 @@ jobs:
           image-digest: ${{ needs.resolve.outputs.image_digest }}
           release-id: ${{ needs.resolve.outputs.promote_tag }}
           applications: prod-frontend
-          token: ${{ steps.gitops-token.outputs.token }}
+          token: ${{ secrets.GITOPS_TOKEN }}
           timeout-minutes: '240'
 
   promote:

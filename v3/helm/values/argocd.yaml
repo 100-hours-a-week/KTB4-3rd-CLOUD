@@ -19,25 +19,28 @@ notifications:
   secret:
     create: false
   notifiers:
-    service.github: |
-      appID: $github-appID
-      installationID: $github-installationID
-      privateKey: $github-privateKey
+    service.webhook.github-status: |
+      url: https://api.github.com
+      headers:
+        - name: Authorization
+          value: Bearer $github-token
+        - name: Accept
+          value: application/vnd.github+json
   templates:
     template.app-deployed: |
-      github:
-        repoURLPath: "{{.app.spec.source.repoURL}}"
-        revisionPath: "{{.app.status.operationState.syncResult.revision}}"
-        status:
-          state: success
-          label: "argocd/{{.app.metadata.name}}"
+      webhook:
+        github-status:
+          method: POST
+          path: /repos/100-hours-a-week/KTB4-3rd-CLOUD/statuses/{{.app.status.operationState.syncResult.revision}}
+          body: |
+            {"state": "success", "context": "argocd/{{.app.metadata.name}}"}
     template.app-failed: |
-      github:
-        repoURLPath: "{{.app.spec.source.repoURL}}"
-        revisionPath: "{{.app.status.operationState.syncResult.revision}}"
-        status:
-          state: failure
-          label: "argocd/{{.app.metadata.name}}"
+      webhook:
+        github-status:
+          method: POST
+          path: /repos/100-hours-a-week/KTB4-3rd-CLOUD/statuses/{{.app.status.operationState.syncResult.revision}}
+          body: |
+            {"state": "failure", "context": "argocd/{{.app.metadata.name}}"}
   triggers:
     trigger.on-deployed: |
       - when: app.status.operationState != nil and app.status.operationState.phase in ['Succeeded'] and app.status.health.status == 'Healthy'
