@@ -1,0 +1,17 @@
+# V2 stg 태스크 정의와 같은 값이다. prod 태스크에는 없다.
+stage: stg
+
+image:
+  digest: sha256:559487754805faf69b079114656d14d9b2f70c92a459f40763340fa2bb46b356
+
+# 앱이 OTLP로 직접 보내므로 Alloy 스크랩을 끈다.
+metrics:
+  enabled: false
+
+env:
+  STAGE: stg
+  OTLP_METRICS_ENABLED: "true"
+  OTLP_METRICS_URL: http://10.20.43.152:9090/api/v1/otlp/v1/metrics
+
+secrets:
+  GOOGLE_APPLICATION_CREDENTIALS: backend/GOOGLE_APPLICATION_CREDENTIALS

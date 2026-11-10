@@ -1,0 +1,18 @@
+stage: dev
+
+# dev EKS 이미지는 CI가 dev-<sha> digest로 갱신한다.
+image:
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+hpa:
+  minReplicas: 1
+  maxReplicas: 2
+
+env:
+  STAGE: dev
+
+secrets:
+  AI_DB_URL: ai/AI_DB_URL
+  AI_QDRANT_API_KEY: ai/AI_QDRANT_API_KEY
+  AI_QDRANT_URL: ai/AI_QDRANT_URL
+  KAFKA_BOOTSTRAP_SERVERS: broker/KAFKA_BOOTSTRAP_SERVERS

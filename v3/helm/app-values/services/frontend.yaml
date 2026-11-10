@@ -1,0 +1,53 @@
+name: frontend
+serviceName: frontend
+
+image:
+  repository: 486152170229.dkr.ecr.ap-northeast-2.amazonaws.com/moyeota/fe
+
+port: 3000
+
+env:
+  TZ: Asia/Seoul
+
+secrets:
+  SENTRY_DSN: frontend/SENTRY_DSN
+  SENTRY_ENVIRONMENT: frontend/SENTRY_ENVIRONMENT
+  SENTRY_TRACES_SAMPLE_RATE: frontend/SENTRY_TRACES_SAMPLE_RATE
+
+resources:
+  cpu: 100m
+  memory: 768Mi
+
+probes:
+  startup:
+    httpGet:
+      path: /
+      port: http
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 30
+  readiness:
+    httpGet:
+      path: /
+      port: http
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  liveness:
+    httpGet:
+      path: /
+      port: http
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+preStopSeconds: 10
+terminationGracePeriodSeconds: 30
+
+hpa:
+  enabled: true
+  # V2 목표 70%는 0.5 vCPU의 0.35 core다. request 100m 기준으로 환산하면 350%다.
+  targetCpuUtilization: 350
+
+targetGroupBinding:
+  enabled: true

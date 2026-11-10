@@ -1,0 +1,23 @@
+name: websocket
+serviceName: websocket
+
+env:
+  APP_ROLE: websocket
+
+resources:
+  cpu: 250m
+  memory: 1024Mi
+
+# ALB 드레이닝 120초가 끝날 때까지 프로세스를 살려 둔다. 이후 Spring 종료 30초 안에 끝낸다.
+preStopSeconds: 125
+terminationGracePeriodSeconds: 180
+
+hpa:
+  enabled: true
+  # V2 목표 60%는 0.5 vCPU의 0.3 core다. request 250m 기준으로 환산하면 120%다.
+  targetCpuUtilization: 120
+  # V2의 disable_scale_in과 같다. 축소는 연결이 끊기므로 운영자가 판단한다.
+  disableScaleDown: true
+
+targetGroupBinding:
+  enabled: true

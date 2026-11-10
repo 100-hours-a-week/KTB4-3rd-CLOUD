@@ -1,0 +1,14 @@
+{{- if .Values.pdb.enabled }}
+# maxUnavailable을 쓰면 replica 1인 서비스도 노드 drain을 막지 않는다.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ .Values.name }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      {{- include "app.selectorLabels" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,26 @@
+# 수동 sync만 허용한다. ALB 연결과 전환 상태를 사람이 확인한 뒤 실행한다.
+# values 순서는 deploy-app.sh와 같다. Application을 지워도 앱이 남도록 finalizer를 두지 않는다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prod-websocket
+  namespace: argocd
+  annotations:
+    notifications.argoproj.io/subscribe.on-deployed.github: ""
+    notifications.argoproj.io/subscribe.on-failed.github: ""
+spec:
+  project: moyeota-prod
+  source:
+    repoURL: https://github.com/100-hours-a-week/KTB4-3rd-CLOUD.git
+    targetRevision: main
+    path: v3/helm/app
+    helm:
+      releaseName: websocket
+      valueFiles:
+        - ../app-values/services/backend-common.yaml
+        - ../app-values/services/websocket.yaml
+        - ../app-values/prod/backend-common.yaml
+        - ../app-values/prod/websocket.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod

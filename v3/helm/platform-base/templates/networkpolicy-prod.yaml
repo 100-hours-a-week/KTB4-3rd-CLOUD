@@ -1,0 +1,56 @@
+{{- if .Values.networkPolicy.enabled }}
+# 인바운드만 제한한다. egress 정책은 전환 후 작업이다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: {{ .Values.networkPolicy.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+---
+# websocket → rest:8080, rest·websocket → fastapi:8000 같은 Namespace 내부 호출
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+  namespace: {{ .Values.networkPolicy.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-from-alb-and-monitoring
+  namespace: {{ .Values.networkPolicy.namespace }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.monitoringNamespace }}
+      ports:
+{{- range .Values.networkPolicy.metricsPorts }}
+        - protocol: TCP
+          port: {{ . }}
+{{- end }}
+    - from:
+{{- range .Values.networkPolicy.albCidrs }}
+        - ipBlock:
+            cidr: {{ . }}
+{{- end }}
+      ports:
+{{- range .Values.networkPolicy.albPorts }}
+        - protocol: TCP
+          port: {{ . }}
+{{- end }}
+{{- end }}

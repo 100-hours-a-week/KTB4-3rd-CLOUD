@@ -1,0 +1,7 @@
+# Kafka에 붙는 BE 서비스. rest-api(아웃박스 기록), worker(결정 반영), matching(Streams)에 적용한다.
+# websocket은 Kafka에 붙지 않는다.
+env:
+  MOYEOTA_TAXIPOT_MATCHING_MODE: kafka
+
+secrets:
+  KAFKA_BOOTSTRAP_SERVERS: broker/KAFKA_BOOTSTRAP_SERVERS

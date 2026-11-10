@@ -1,0 +1,5 @@
+apiVersion: v2
+name: moyeota-app
+description: Moyeota V3 EKS 공통 앱 Chart (rest-api, websocket, fastapi, frontend)
+type: application
+version: 0.1.0

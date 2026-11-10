@@ -1,0 +1,15 @@
+{{- if .Values.targetGroupBinding.enabled }}
+# Target Group과 노드 SG 인바운드는 Terraform 소유라 networking을 지정하지 않는다.
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: {{ .Values.name }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  targetGroupARN: {{ required "targetGroupBinding.targetGroupARN이 필요합니다" .Values.targetGroupBinding.targetGroupARN }}
+  targetType: ip
+  serviceRef:
+    name: {{ .Values.serviceName }}
+    port: {{ .Values.port }}
+{{- end }}

@@ -1,0 +1,9 @@
+region: ap-northeast-2
+
+# SecretStore를 만드는 Namespace. 각 스테이지의 ExternalSecret은 같은 Namespace의 Store만 참조할 수 있다.
+stages:
+  - prod
+  - stg
+  - dev
+
+storeName: aws-parameter-store

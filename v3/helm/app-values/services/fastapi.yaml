@@ -1,0 +1,59 @@
+name: fastapi
+serviceName: fastapi
+
+image:
+  repository: 486152170229.dkr.ecr.ap-northeast-2.amazonaws.com/moyeota/ai
+
+port: 8000
+
+metrics:
+  enabled: true
+  port: 8000
+  path: /metrics
+
+env:
+  LOCAL_DEVICE: "FALSE"
+  TZ: Asia/Seoul
+
+secrets:
+  OPENAI_API_KEY_1: ai/OPENAI_API_KEY_1
+  OPENAI_API_KEY_2: ai/OPENAI_API_KEY_2
+
+resources:
+  cpu: 250m
+  memory: 768Mi
+
+probes:
+  startup:
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 30
+  readiness:
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 5
+    timeoutSeconds: 2
+    failureThreshold: 3
+  liveness:
+    httpGet:
+      path: /health
+      port: http
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+preStopSeconds: 10
+terminationGracePeriodSeconds: 30
+
+hpa:
+  enabled: true
+  # V2 목표 70%는 0.5 vCPU의 0.35 core다. request 250m 기준으로 환산하면 140%다.
+  targetCpuUtilization: 140
+
+# 내부 전용이라 ALB에 연결하지 않는다.
+targetGroupBinding:
+  enabled: false

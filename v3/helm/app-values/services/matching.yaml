@@ -1,0 +1,39 @@
+# 같은 BE 이미지. 택시팟 매칭 Kafka Streams 전용이다 (BE #336 이후 이미지). ALB 없음.
+name: matching
+serviceName: matching
+serviceEnabled: false
+
+# V2 stg와 같이 1개로 시작하고, 교체할 때 신구 파드가 겹쳐 리밸런스가 반복되지 않게 한다.
+replicas: 1
+strategy:
+  type: Recreate
+
+env:
+  APP_ROLE: matching
+  JAVA_TOOL_OPTIONS: -Xms128m -Xmx736m -XX:ActiveProcessorCount=2
+
+# RocksDB가 힙 밖 메모리를 쓰므로 limit을 힙의 2배로 둔다.
+resources:
+  cpu: 500m
+  memory: 1536Mi
+
+probes:
+  readiness: null
+
+hostSpread: false
+
+# Streams 기본 state.dir이다. 컨테이너 재시작 때 changelog 복원을 줄인다.
+emptyDirs:
+  - name: kafka-streams-state
+    mountPath: /tmp/kafka-streams
+    sizeLimit: 2Gi
+
+preStopSeconds: 0
+terminationGracePeriodSeconds: 60
+
+hpa:
+  enabled: false
+pdb:
+  enabled: false
+targetGroupBinding:
+  enabled: false

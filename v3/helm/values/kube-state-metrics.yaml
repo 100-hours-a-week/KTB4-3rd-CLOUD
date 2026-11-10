@@ -1,0 +1,20 @@
+# Pod 재시작, 준비 상태, HPA 값을 수집한다. Alloy가 아래 annotation을 보고 스크랩한다.
+replicas: 1
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "8080"
+  prometheus.io/path: /metrics
+
+nodeSelector:
+  role: system
+tolerations:
+  - key: CriticalAddonsOnly
+    operator: Exists
+
+resources:
+  requests:
+    cpu: 20m
+    memory: 128Mi
+  limits:
+    memory: 128Mi

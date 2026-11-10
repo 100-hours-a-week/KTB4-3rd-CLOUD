@@ -1,0 +1,75 @@
+# 기본값은 helm lint·template 검증용이다. 실제 값은 v3/helm/app-values에서 덮어쓴다.
+name: sample
+stage: stg
+# Kubernetes Service 이름. websocket이 http://rest:8080, rest가 http://fastapi:8000으로 호출한다.
+serviceName: sample
+# 호출받지 않는 worker, matching은 false.
+serviceEnabled: true
+
+# Recreate는 신구 파드가 겹치면 안 되는 worker, matching에 쓴다.
+strategy:
+  type: RollingUpdate
+  maxSurge: 1
+  maxUnavailable: 0
+
+# Alloy 스크랩 대상. OTLP로 직접 보내는 서비스는 false.
+metrics:
+  enabled: false
+  port: 8090
+  path: /actuator/prometheus
+
+# 컨테이너 재시작에도 남겨야 하는 로컬 상태. {name, mountPath, sizeLimit}
+emptyDirs: []
+
+image:
+  repository: 486152170229.dkr.ecr.ap-northeast-2.amazonaws.com/moyeota/be
+  # ECR이 immutable이므로 digest로 배포한다.
+  digest: sha256:0000000000000000000000000000000000000000000000000000000000000000
+
+command: []
+args: []
+
+port: 8080
+# 앱 포트와 분리된 관리 포트. 없으면 null.
+managementPort: null
+
+# 평문 환경변수. ConfigMap으로 만든다.
+env: {}
+# 환경변수 이름 → SSM 경로 /moyeota/v2/<stage>/ 아래의 상대 경로. map이라 values 파일끼리 병합된다.
+secrets: {}
+secretRefreshInterval: 1h
+
+resources:
+  cpu: 100m
+  memory: 256Mi
+
+probes:
+  startup: {}
+  readiness: {}
+  liveness: {}
+
+# ALB 대상 제거를 기다리는 시간. terminationGracePeriodSeconds 안에 포함된다. ALB가 없으면 0.
+preStopSeconds: 10
+terminationGracePeriodSeconds: 30
+
+# 같은 서비스 파드를 노드에 고르게 분산한다. V2 distinct_instance 대체.
+hostSpread: false
+
+# hpa.enabled가 false일 때만 사용한다.
+replicas: 1
+
+hpa:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 1
+  # request 대비 비율이다.
+  targetCpuUtilization: 100
+  disableScaleDown: false
+
+pdb:
+  enabled: true
+
+targetGroupBinding:
+  enabled: false
+  # deploy-app.sh가 terraform output에서 넣는다.
+  targetGroupARN: ""

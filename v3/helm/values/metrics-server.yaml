@@ -1,0 +1,19 @@
+# HPA(12번 PR)의 CPU·메모리 지표 공급원이다. 노드 교체 중에도 HPA가 멈추지 않도록 2개로 둔다.
+replicas: 2
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+nodeSelector:
+  role: system
+tolerations:
+  - key: CriticalAddonsOnly
+    operator: Exists
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 200Mi
+  limits:
+    memory: 200Mi

@@ -1,0 +1,6 @@
+hpa:
+  minReplicas: 2
+  maxReplicas: 4
+
+targetGroupBinding:
+  targetGroupARN: arn:aws:elasticloadbalancing:ap-northeast-2:486152170229:targetgroup/moyeota-v3-eks-stg-rest/93f0e34acce80de4

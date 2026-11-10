@@ -1,0 +1,8 @@
+stage: prod
+
+image:
+  digest: sha256:9f53c95decb50a5c33ade8415016ac9c6d39b4bbfda4a08fcdf7e843eda1e0c9
+
+hpa:
+  minReplicas: 1
+  maxReplicas: 2
