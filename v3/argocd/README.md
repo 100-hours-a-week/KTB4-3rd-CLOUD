@@ -23,18 +23,16 @@ GitHub Actions는 클러스터에 접근하지 않는다. Argo CD Notifications�
 
 ### 공통
 
-1. GitHub App을 만들어 CLOUD 저장소에 설치한다. 권한은 Contents 쓰기, Commit statuses 쓰기다.
+1. CLOUD 저장소 쓰기 권한이 있는 토큰을 만든다. 공개 저장소이므로 classic PAT의 `public_repo` 범위면 된다. 조직 admin 권한을 받으면 GitHub App으로 바꾼다.
 2. Secret을 만들고 `install-platform.sh`의 Argo CD 단계를 다시 적용한다.
 
    ```bash
    kubectl -n argocd create secret generic argocd-notifications-secret \
-     --from-literal=github-appID=<앱 ID> \
-     --from-literal=github-installationID=<설치 ID> \
-     --from-file=github-privateKey=<개인 키 파일>
+     --from-literal=github-token=<토큰>
    ```
 
 3. 이 디렉터리와 `v3/helm`을 `main`에 머지한다.
-4. 앱 저장소 Environment `dev`, `staging`, `production`에 `GITOPS_APP_ID`, `GITOPS_APP_PRIVATE_KEY`를 넣는다.
+4. BE, FE, AI 저장소 Secret에 `GITOPS_TOKEN`을 넣는다.
 5. `.github/actions/gitops-deploy`와 `.github/workflows/v3/v3-<app>-<stage>-cd.yaml`을 앱 저장소에 복사한다. action 사본은 앱 저장소 `main`에 있어야 한다.
 
 ### stg
