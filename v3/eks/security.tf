@@ -13,7 +13,9 @@ locals {
     core-otlp      = { sg = "moyeota-v2-monitoring", port = 9090, node = "core" }
     core-msk       = { sg = "moyeota-v2-prod-msk", port = 9092, node = "core" }
     realtime-msk   = { sg = "moyeota-v2-prod-msk", port = 9092, node = "realtime" }
-    # burst는 prod 저장소 규칙을 두지 않는다. 외부 입력을 다루는 fastapi가 침해되어도 RDS, Redis에 닿지 못한다.
+    # burst는 prod RDS, Redis 규칙을 두지 않는다. 외부 입력을 다루는 fastapi가 침해되어도 RDS, Redis에 닿지 못한다.
+    # MSK(9092)만 예외다. fastapi가 혼잡도 분석 요청 토픽을 소비해야 한다.
+    burst-msk  = { sg = "moyeota-v2-prod-msk", port = 9092, node = "burst" }
     burst-loki = { sg = "moyeota-v2-monitoring", port = 3100, node = "burst" }
     burst-otlp = { sg = "moyeota-v2-monitoring", port = 9090, node = "burst" }
     stg-rds    = { sg = "moyeota-v2-stg-rds", port = 3306, node = "stg" }
