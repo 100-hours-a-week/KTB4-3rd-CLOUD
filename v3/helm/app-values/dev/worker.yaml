@@ -1,1 +1,7 @@
 replicas: 1
+
+image:
+  # A later BE deployment supersedes this worker image.
+  digestOverride:
+    base: sha256:9ffb46105d00aa4264d5cb755abc5a4c1027e4d518f871bbe455250efad5258f
+    digest: sha256:ec79ca040775894108705a3dee72315b55540c91596b35feb43851f54b1a2fbf

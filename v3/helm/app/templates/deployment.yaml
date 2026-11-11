@@ -72,7 +72,13 @@ spec:
       {{- end }}
       containers:
         - name: {{ .Values.name }}
-          image: "{{ .Values.image.repository }}@{{ .Values.image.digest }}"
+          {{- $imageDigest := .Values.image.digest }}
+          {{- with .Values.image.digestOverride }}
+          {{- if eq .base $imageDigest }}
+          {{- $imageDigest = required "image.digestOverride.digest is required" .digest }}
+          {{- end }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}@{{ $imageDigest }}"
           imagePullPolicy: IfNotPresent
           {{- with .Values.command }}
           command:
