@@ -10,8 +10,12 @@ hpa:
   minReplicas: 2
   maxReplicas: 3
 
+env:
+  STAGE: prod
+
 # 혼잡도 판정 Claude 폴백과 SemIf(Modal) 폴백에 쓴다.
-# Admin_Discord_ID·DISCORD_*는 서버 모니터링 봇 Discord 연동 값이다 (v2 ai_monitor_stages에 prod 포함).
+# Admin_Discord_ID·DISCORD_*·AI_*·TELEGRAM_*는 서버 모니터링 봇 값, KAFKA_BOOTSTRAP_SERVERS는 혼잡도 분석 소비용이다.
+# 배포 전에 SSM /moyeota/v2/prod/{ai,broker}/* 키가 모두 있어야 한다. 하나라도 없으면 ExternalSecret 전체가 동기화에 실패한다.
 secrets:
   ANTHROPIC_API_KEY: ai/ANTHROPIC_API_KEY
   MODAL_TOKEN_ID_2: ai/MODAL_TOKEN_ID_2
@@ -19,3 +23,9 @@ secrets:
   Admin_Discord_ID: ai/Admin_Discord_ID
   DISCORD_BOT_TOKEN: ai/DISCORD_BOT_TOKEN
   DISCORD_CHANNEL_ID: ai/DISCORD_CHANNEL_ID
+  AI_DB_URL: ai/AI_DB_URL
+  AI_QDRANT_API_KEY: ai/AI_QDRANT_API_KEY
+  AI_QDRANT_URL: ai/AI_QDRANT_URL
+  Admin_Telegram_ID: ai/Admin_Telegram_ID
+  KAFKA_BOOTSTRAP_SERVERS: broker/KAFKA_BOOTSTRAP_SERVERS
+  TELEGRAM_BOT_TOKEN: ai/TELEGRAM_BOT_TOKEN
