@@ -7,6 +7,10 @@ zoneSpread: true
 image:
   digest: sha256:0a3085360edc6bd61aead3835ef9aff3c88af6c26e9dc375234167fd558a892b
 
+# 평시 혼잡도 집계 구간(분). BE PR #405(CongestionWindowProperties.defaultMinutes)가 반영된 이미지부터 적용된다.
+env:
+  MOYEOTA_CONGESTION_WINDOW_DEFAULT_MINUTES: "10"
+
 secrets:
   CONGESTION_AUTHOR_KEY_SECRET: backend/CONGESTION_AUTHOR_KEY_SECRET
   MONGODB_URI: backend/MONGODB_URI
