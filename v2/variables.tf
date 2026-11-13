@@ -522,6 +522,17 @@ variable "kafka_matching_stages" {
   }
 }
 
+variable "chat_system_message_kafka_stages" {
+  description = "채팅 시스템 메시지를 동행·정산 사실 토픽으로 남길 스테이지. 없는 스테이지는 BE 기본값(direct)으로 동작한다. 토픽이 만들어진 스테이지만 넣는다."
+  type        = list(string)
+  default     = ["dev"]
+
+  validation {
+    condition     = alltrue([for s in var.chat_system_message_kafka_stages : contains(["dev", "stg", "prod"], s)])
+    error_message = "chat_system_message_kafka_stages may only contain dev, stg, prod."
+  }
+}
+
 variable "dev_data_ports" {
   description = "dev rest·websocket 태스크가 dev EC2(compose MySQL·Redis·MongoDB)에 접근할 포트"
   type        = list(number)

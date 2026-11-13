@@ -5,3 +5,7 @@ image:
   digestOverride:
     base: sha256:9ffb46105d00aa4264d5cb755abc5a4c1027e4d518f871bbe455250efad5258f
     digest: sha256:ec79ca040775894108705a3dee72315b55540c91596b35feb43851f54b1a2fbf
+
+# 채팅 시스템 메시지를 동행·정산 사실 토픽으로 남긴다 (BE 기본값 direct). rest-api·worker에만 넣는다.
+env:
+  MOYEOTA_CHAT_SYSTEMMESSAGE_MODE: kafka
