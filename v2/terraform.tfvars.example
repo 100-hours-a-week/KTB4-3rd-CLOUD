@@ -194,5 +194,9 @@ monitoring_grafana_alerting_enabled = false
 # msk_stages       = ["stg"]
 # msk_third_subnet = { cidr = "10.20.102.0/24", az = "ap-northeast-2b" }
 
+# stg 데이터 계층 스위치 (stg_data_layer.tf) — 절차: STG_DATA_LAYER_TOGGLE.md, 실행: scripts/stg-data-layer.sh
+#   false면 stg MSK·Redis를 삭제하고(보안그룹·SSM은 남김) stg RDS를 중지 상태로 유지한다
+# stg_data_layer_enabled = true
+
 # dev Kafka EC2 1노드 (kafka_dev.tf) — dev 스케줄로 시작·중지. dev를 msk_stages에 함께 넣지 않는다
 # dev_kafka_enabled = true

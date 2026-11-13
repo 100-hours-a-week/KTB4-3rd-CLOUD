@@ -807,6 +807,36 @@ variable "stg_qa_schedule" {
   }
 }
 
+variable "stg_data_layer_enabled" {
+  description = <<-EOT
+    stg 데이터 계층(MSK, ElastiCache Redis, RDS) 스위치 (stg_data_layer.tf, 절차: STG_DATA_LAYER_TOGGLE.md).
+      true  : msk_stages·elasticache_redis_stages에 든 stg 리소스를 그대로 운영한다.
+      false : stg MSK 클러스터와 stg Redis 복제 그룹을 삭제한다(중지 기능이 없다).
+              보안그룹·SSM 파라미터·kafka-init 태스크 정의·MSK 설정은 남겨 다시 켤 때 그대로 쓴다.
+              stg RDS(CLI 관리)는 scripts/stg-data-layer.sh로 중지하고, 7일 뒤 자동 시작되지 않도록
+              stg_rds_keep_stopped_cron 스케줄이 매일 다시 중지한다.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "stg_rds_identifier" {
+  description = "stg_data_layer_enabled = false일 때 중지 상태로 유지할 stg RDS 인스턴스 ID (CLI 관리)"
+  type        = string
+  default     = "moyeota-v2-stg"
+}
+
+variable "stg_rds_keep_stopped_cron" {
+  description = "stg 데이터 계층이 꺼져 있는 동안 stg RDS를 다시 중지하는 EventBridge Scheduler cron (Asia/Seoul). AWS는 중지 7일 뒤 자동으로 시작한다."
+  type        = string
+  default     = "cron(0 5 * * ? *)"
+
+  validation {
+    condition     = can(regex("^cron\\(.+\\)$", var.stg_rds_keep_stopped_cron))
+    error_message = "stg_rds_keep_stopped_cron은 EventBridge Scheduler cron(...) 형식이어야 한다."
+  }
+}
+
 # -----------------------------------------------------------------------------
 # 중앙 모니터링 (monitoring.tf) — PLG(Prometheus · Loki · Grafana) + Alloy
 #   wiki「V2 중앙 집중식 모니터링 시스템 설계」
