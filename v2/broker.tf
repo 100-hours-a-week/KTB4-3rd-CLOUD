@@ -37,7 +37,7 @@ locals {
 
   # 노드 ID (<replication_group_id>-001, -002 …) — 알람 dimension용
   redis_nodes = merge({}, [
-    for s in local.redis_stages : {
+    for s in local.redis_running_stages : {
       for i in range(local.redis_stage_settings[s].replicas + 1) :
       "${s}-${format("%03d", i + 1)}" => {
         stage   = s
@@ -60,8 +60,9 @@ locals {
 
   # 스테이지 → 브로커 엔드포인트 (dev는 dev EC2 compose Redis)
   broker_endpoints = merge(
+    # 복제 그룹이 꺼진 스테이지는 자리표시자를 넣어 SSM 파라미터를 남긴다 (stg_data_layer.tf)
     { for s in local.redis_stages : s => {
-      host = aws_elasticache_replication_group.redis[s].primary_endpoint_address
+      host = contains(local.redis_running_stages, s) ? aws_elasticache_replication_group.redis[s].primary_endpoint_address : local.stg_data_layer_paused_host
       port = var.redis_port
     } },
     { for s in(contains(keys(local.ecs_stages), "dev") ? ["dev"] : []) : s => {
@@ -132,7 +133,8 @@ resource "aws_vpc_security_group_ingress_rule" "redis_from_tasks" {
 }
 
 resource "aws_elasticache_replication_group" "redis" {
-  for_each = local.redis_stages
+  # stg_data_layer_enabled = false면 stg가 빠진다 (stg_data_layer.tf)
+  for_each = local.redis_running_stages
 
   replication_group_id = "${var.project_name}-${each.key}-redis"
   description          = "${each.key} chat fan-out broker (Redis Pub/Sub)"

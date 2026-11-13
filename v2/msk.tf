@@ -66,7 +66,7 @@ locals {
 
   # 중앙 Prometheus 수집 대상 (monitoring.tf). AWS 권장에 따라 수집 주기는 60초 이상으로 둔다.
   msk_scrape_targets = flatten([
-    for s in local.msk_active_stages : [
+    for s in local.msk_running_stages : [
       for exporter, port in { jmx = local.msk_jmx_port, node = local.msk_node_port } : {
         job                       = "${s}-msk-${exporter}"
         stage                     = s
@@ -79,12 +79,12 @@ locals {
   ])
 
   msk_disk_alarms = {
-    for pair in setproduct(local.msk_active_stages, range(1, local.msk_broker_count + 1)) :
+    for pair in setproduct(local.msk_running_stages, range(1, local.msk_broker_count + 1)) :
     "${pair[0]}-${pair[1]}" => { stage = pair[0], broker = pair[1] }
     if local.alerting_enabled && contains(var.alert_stages, pair[0])
   }
   msk_alarm_stages = toset([
-    for s in local.msk_active_stages : s if local.alerting_enabled && contains(var.alert_stages, s)
+    for s in local.msk_running_stages : s if local.alerting_enabled && contains(var.alert_stages, s)
   ])
 }
 
@@ -205,7 +205,8 @@ resource "aws_cloudwatch_log_group" "msk" {
 }
 
 resource "aws_msk_cluster" "kafka" {
-  for_each = local.msk_active_stages
+  # stg_data_layer_enabled = false면 stg가 빠진다 (stg_data_layer.tf)
+  for_each = local.msk_running_stages
 
   cluster_name           = "${var.project_name}-${each.key}"
   kafka_version          = var.msk_kafka_version
@@ -283,7 +284,7 @@ resource "aws_msk_cluster" "kafka" {
 
 # 스토리지는 줄일 수 없고 확장은 6시간에 한 번만 가능하다. 최대값은 비용 상한으로 정한다.
 resource "aws_appautoscaling_target" "msk_storage" {
-  for_each = local.msk_active_stages
+  for_each = local.msk_running_stages
 
   service_namespace  = "kafka"
   scalable_dimension = "kafka:broker-storage:VolumeSize"
@@ -293,7 +294,7 @@ resource "aws_appautoscaling_target" "msk_storage" {
 }
 
 resource "aws_appautoscaling_policy" "msk_storage" {
-  for_each = local.msk_active_stages
+  for_each = local.msk_running_stages
 
   name               = "${var.project_name}-${each.key}-msk-storage"
   policy_type        = "TargetTrackingScaling"
@@ -321,7 +322,8 @@ resource "aws_ssm_parameter" "kafka_bootstrap_servers" {
   description = "MSK bootstrap ${each.key} (Terraform 관리 — 콘솔에서 수정하지 않는다)"
   type        = "String"
   tier        = "Standard"
-  value       = aws_msk_cluster.kafka[each.key].bootstrap_brokers
+  # 클러스터가 꺼진 스테이지는 자리표시자를 넣어 파라미터를 남긴다 (stg_data_layer.tf)
+  value = contains(local.msk_running_stages, each.key) ? aws_msk_cluster.kafka[each.key].bootstrap_brokers : local.stg_data_layer_paused_host
 
   tags = {
     Stage = each.key
