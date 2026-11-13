@@ -5,3 +5,7 @@ hpa:
 targetGroupBinding:
   enabled: true
   targetGroupARN: arn:aws:elasticloadbalancing:ap-northeast-2:486152170229:targetgroup/moyeota-v3-eks-dev-rest/08a201b5667b6cbf
+
+# 채팅 시스템 메시지를 동행·정산 사실 토픽으로 남긴다 (BE 기본값 direct). rest-api·worker에만 넣는다.
+env:
+  MOYEOTA_CHAT_SYSTEMMESSAGE_MODE: kafka

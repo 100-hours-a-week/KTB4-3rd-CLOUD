@@ -51,6 +51,10 @@ locals {
   #   rest : 매칭 요청을 아웃박스에 기록, worker : 매칭 결정 반영, matching : Streams. websocket은 Kafka에 붙지 않는다.
   kafka_matching_services = ["rest", "worker", "matching"]
 
+  # 채팅 시스템 메시지를 동행·정산 사실 토픽(companion.changed, settlement.changed)으로 남길 때 모드 값을 받는 서비스 (BE 기본값은 direct).
+  #   rest : 아웃박스에 기록, worker : 아웃박스 발행 + chat-system-message-writer 소비.
+  chat_system_message_kafka_services = ["rest", "worker"]
+
   # 스테이지 × 서비스 → "prod-rest" 같은 키로 펼친다. 이미지가 지정된 서비스만 만든다.
   ecs_service_instances = merge([
     for stage, s in local.ecs_stages : {
@@ -202,6 +206,7 @@ module "ecs_service" {
     each.value.environment,
     contains(keys(local.monitoring_metrics_endpoints), each.value.service) ? lookup(local.otlp_push_environment, each.value.stage, {}) : {},
     contains(var.kafka_matching_stages, each.value.stage) && contains(local.kafka_matching_services, each.value.service) ? { MOYEOTA_TAXIPOT_MATCHING_MODE = "kafka" } : {},
+    contains(var.chat_system_message_kafka_stages, each.value.stage) && contains(local.chat_system_message_kafka_services, each.value.service) ? { MOYEOTA_CHAT_SYSTEMMESSAGE_MODE = "kafka" } : {},
   )
   secrets            = each.value.secrets
   entry_point        = contains(local.be_container_services, each.value.service) ? local.be_container_entry_point : null
