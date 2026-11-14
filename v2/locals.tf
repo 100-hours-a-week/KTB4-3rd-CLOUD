@@ -308,7 +308,10 @@ locals {
   # 스테이지별 ALB 라우팅 (issues/ecs-alb-multi-target-groups.md 5.2, 8절)
   #   alb_key : ecs.tf의 리스너·ALB SG 선택 (prod → Prod ALB, nonprod → Non-Prod ALB)
   #
-  #   prod (Prod ALB) — ECS 규칙은 항상 우선순위 1~4 (Compose 규칙 10·20과 기본 동작보다 먼저 평가)
+  #   prod (Prod ALB) — ECS 규칙은 우선순위 5~8 (websocket 5, rest 6, frontend 8)
+  #     Compose 규칙 10·20과 기본 동작보다 먼저 평가된다. 10 이상으로 옮기면 Compose 규칙이 먼저 걸리므로 옮기지 않는다.
+  #     1~4는 v4 ECS 규칙 자리다 (v4/variables.tf listener_priorities, v3/docs/ECS_MINIMAL_OPS_TRANSITION.md 5.10절).
+  #     ECS 규칙의 가중치(ECS·EKS)는 v3/scripts/alb-weight.sh가 바꾸므로, V2 apply는 가중치를 ECS 100%로 되돌린다.
   #     컷오버 전 : ECS 규칙에 X-Moyeota-Stage: prod 헤더 조건 → 헤더 요청만 ECS, 나머지는 Compose 쪽으로 간다
   #     컷오버 후 : ecs_prod_alb_cutover = true → 헤더 조건만 빠진다 (규칙 교체 없이 조건 update)
   #     이전 값(컷오버 전 100~103)은 /api/* 요청이 헤더가 있어도 Compose 규칙(10·20)에 먼저 걸려 ECS로 오지 않았다.
@@ -318,7 +321,7 @@ locals {
   ecs_alb_routing = {
     prod = {
       alb_key       = "prod"
-      priority_base = 1
+      priority_base = 5
       host_headers  = lookup(var.ecs_alb_host_headers, "prod", [])
       http_headers  = { for k, v in { "X-Moyeota-Stage" = ["prod"] } : k => v if !var.ecs_prod_alb_cutover }
     }
