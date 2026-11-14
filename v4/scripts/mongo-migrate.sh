@@ -90,7 +90,7 @@ in_mongo 'mongodump --version | head -1; mongorestore --version | head -1'
 echo "== V3 replica set"
 in_mongo 'mongosh "$SRC" --quiet --eval "const h = db.hello(); print(JSON.stringify({setName: h.setName, primary: h.primary, hosts: h.hosts}))"'
 echo "== V3 moyeota DB 크기"
-in_mongo 'mongosh "$SRC" --quiet --eval "const s = db.getSiblingDB(\"moyeota\").stats(); print(JSON.stringify({collections: s.collections, dataSizeMB: Math.round(s.dataSize / 1048576), storageSizeMB: Math.round(s.storageSize / 1048576)}))"'
+in_mongo 'mongosh "$SRC" --quiet --eval "const s = db.getSiblingDB(\"moyeota\").stats(); print(JSON.stringify({collections: Number(s.collections), dataSizeKB: Math.round(Number(s.dataSize) / 1024), storageSizeKB: Math.round(Number(s.storageSize) / 1024)}))"'
 echo "== v4 MongoDB"
 in_mongo 'mongosh "$DST" --quiet --eval "print(JSON.stringify(db.adminCommand({ping: 1})))"'
 echo "== 문서 수"

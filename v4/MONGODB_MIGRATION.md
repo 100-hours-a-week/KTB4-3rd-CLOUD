@@ -8,7 +8,7 @@
 |---|---|---|
 | 위치 | replica set `rs0` 3대 (데이터 서브넷 2a·2c·2b, t3.small) | 데이터 호스트 1대의 `mongo` 컨테이너 (v4 app 서브넷 2a) |
 | 접속 정보 | `/moyeota/v2/prod/backend/MONGODB_URI`, `/moyeota/v2/prod/mongo/ROOT_PASSWORD` | `/moyeota/v4/prod/backend/MONGODB_URI`, `/moyeota/v4/prod/mongo/ROOT_PASSWORD` |
-| 데이터 | `moyeota` DB의 혼잡도 도메인(spots, signals, 혼잡도 이력, 작업). signals는 시계열 + TTL 7일 | 같은 DB로 복원 |
+| 데이터 | `moyeota` DB의 혼잡도 도메인: spots(2dsphere), signals, congestion_history(시계열 + 컬렉션 TTL 7일), congestion_jobs | 같은 DB로 복원 |
 
 - **방식:** 데이터 호스트가 V3 replica set에 직접 접속해 `mongodump --archive --gzip | mongorestore --drop`으로 옮긴다. S3 같은 중간 저장소를 쓰지 않는다.
 - **범위:** `moyeota` DB의 컬렉션과 인덱스(시계열, TTL, 2dsphere 포함). 사용자·역할은 옮기지 않는다. 양쪽 앱 계정 `moyeota`는 각 호스트가 부팅 때 만든다.
@@ -49,7 +49,7 @@
 | 7 | 이관 권한 닫기 | v4 tfvars `mongo_migration_enabled = false` apply. **V3 destroy(D3) 전에 반드시 끈다** (V3 SG를 조회하므로 V3가 사라지면 plan이 실패한다) |
 
 - 4번에서 V3에 쓰기가 남아 있으면 문서 수가 어긋날 수 있다. 1·2번을 확인한 뒤 진행하고, 어긋나면 원인을 확인하고 4번을 다시 실행한다(`--drop`이라 다시 실행해도 된다).
-- signals는 TTL 7일 컬렉션이다. 이관과 검증 사이에 만료 문서가 지워지면 V3와 v4 수가 몇 건 다를 수 있다. 그 경우 `count`를 다시 돌려 차이가 TTL 만료 범위인지 본다.
+- congestion_history는 TTL 7일 시계열 컬렉션이다. 이관과 검증 사이에 만료 문서가 지워지면 V3와 v4 수가 몇 건 다를 수 있다. 그 경우 `count`를 다시 돌려 차이가 TTL 만료 범위인지 본다.
 
 ## 4. 확인 (전환 후)
 
