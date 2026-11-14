@@ -60,6 +60,19 @@ data "aws_security_group" "v2" {
   vpc_id = data.aws_vpc.shared.id
 }
 
+# V2 모니터링 EC2 (Grafana, Prometheus, Loki). Alloy 로그와 앱 OTLP 지표의 목적지다.
+data "aws_instance" "monitoring" {
+  filter {
+    name   = "tag:Name"
+    values = ["${var.v2_project_name}-monitoring"]
+  }
+
+  filter {
+    name   = "instance-state-name"
+    values = ["running"]
+  }
+}
+
 data "aws_iam_openid_connect_provider" "github" {
   url = "https://token.actions.githubusercontent.com"
 }

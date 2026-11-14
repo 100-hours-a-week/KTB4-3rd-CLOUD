@@ -128,3 +128,105 @@ variable "data_host_snapshot_retain_days" {
   type        = number
   default     = 7
 }
+
+variable "image_digests" {
+  description = "첫 배포(부트스트랩 revision) 이미지 digest. 이후 이미지는 CD가 새 revision으로 반영한다. V3 prod 값(v3/helm/app-values/prod)으로 시작한다."
+  type = object({
+    be = string
+    fe = string
+    ai = string
+  })
+
+  validation {
+    condition     = alltrue([for d in values(var.image_digests) : can(regex("^sha256:[0-9a-f]{64}$", d))])
+    error_message = "image_digests는 sha256:<64자리 hex> 형식이어야 한다."
+  }
+}
+
+variable "spot_instance_types" {
+  description = "Spot 앱 호스트 후보. 서울 회수율이 낮은 타입만 둔다(설계 6.2절). m5·m6i·c6i·r5 계열은 회수율이 높아 넣지 않는다. 모두 ENI 3개 → awsvpc 태스크 2개."
+  type        = list(string)
+  default     = ["t3.medium", "t3.large", "t3a.medium", "c5.large"]
+}
+
+variable "spot_capacity" {
+  description = "Spot ASG 크기. 태스크 4개 = 호스트 2대. max는 회수 예고 때 대체 인스턴스를 먼저 띄울 여유 1대를 더한다."
+  type = object({
+    min = number
+    max = number
+  })
+  default = {
+    min = 2
+    max = 3
+  }
+}
+
+variable "capacity_mode" {
+  description = "서비스가 쓰는 Capacity Provider. 평소 spot, Spot 용량 부족 때 od로 바꿔 apply한다 (README 런북)."
+  type        = string
+  default     = "spot"
+
+  validation {
+    condition     = contains(["spot", "od"], var.capacity_mode)
+    error_message = "capacity_mode는 spot 또는 od다."
+  }
+}
+
+variable "container_stop_timeout_seconds" {
+  description = "SIGTERM 뒤 SIGKILL까지 기다리는 시간. Spot 회수 예고(2분) 안에 끝나도록 120초보다 짧게 둔다."
+  type        = number
+  default     = 110
+
+  validation {
+    condition     = var.container_stop_timeout_seconds > 0 && var.container_stop_timeout_seconds < 120
+    error_message = "container_stop_timeout_seconds는 120초보다 짧아야 한다."
+  }
+}
+
+variable "rest_app_role" {
+  description = "rest 서비스의 APP_ROLE. 전환 전(EKS worker가 도는 동안)에는 rest, 전환 때 rest,worker,matching으로 바꾼다 (설계 5.2절)."
+  type        = string
+  default     = "rest"
+
+  validation {
+    condition     = contains(["rest", "rest,worker,matching"], var.rest_app_role)
+    error_message = "rest_app_role은 rest 또는 rest,worker,matching이다."
+  }
+}
+
+variable "cutover_enabled" {
+  description = "false: 헤더 X-Moyeota-Target: v4 요청만 v4로(테스트). true: 경로가 맞는 모든 요청을 v4로(전환). 되돌리면 V2 규칙으로 돌아간다."
+  type        = bool
+  default     = false
+}
+
+variable "listener_priorities" {
+  description = "V2 prod HTTPS 리스너에 추가하는 v4 규칙 우선순위. V2 prod 규칙(priority_base 100 이후)보다 앞서야 한다."
+  type = object({
+    websocket = number
+    rest      = number
+    frontend  = number
+  })
+  default = {
+    websocket = 10
+    rest      = 11
+    frontend  = 13
+  }
+}
+
+variable "log_retention_days" {
+  description = "서비스·Alloy CloudWatch 로그 보관 일수."
+  type        = number
+  default     = 14
+}
+
+variable "exec_log_retention_days" {
+  description = "ECS Exec 세션 로그 보관 일수 (접속 감사 기록)."
+  type        = number
+  default     = 30
+}
+
+variable "alloy_image" {
+  type    = string
+  default = "grafana/alloy:v1.20.1"
+}

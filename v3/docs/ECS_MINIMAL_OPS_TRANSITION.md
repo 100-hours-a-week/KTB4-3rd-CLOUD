@@ -141,12 +141,11 @@ v4/
   ssm.tf                  # /moyeota/v4/prod/* 파라미터
   alarms.tf               # CloudWatch 알람, Spot 회수 EventBridge, Discord
   outputs.tf
-  modules/
-    ecs-service/          # v2/modules/ecs/ecs-service 복사 + anti_affinity_services
-    ecs-asg/              # v2/modules/ecs/ecs-asg 복사 (instance_types 명시)
   templates/
-    data-host/            # user_data, compose(Kafka·MongoDB·Redis), topics.sh
+    alloy.alloy.tftpl     # Alloy 로그 수집 설정 (v2 템플릿 복사)
+    data-host/            # user_data, data-host-apply(Kafka·MongoDB·Redis), topics.sh
     nat/                  # NAT 인스턴스 user_data
+# 모듈은 두지 않는다. prod 스테이지 하나라 V2 모듈(ecs-service, ecs-asg, ecs-cluster)을 참고해 리소스를 직접 둔다.
 .github/workflows/v4/     # be·fe·ai prod CD (ecs-deploy 액션 재사용)
 ```
 
@@ -329,7 +328,7 @@ V2 prod 규칙은 우선순위 1(websocket)·2(rest)·4(frontend)를 쓴다(`v2/
 | V4-4 | SG, V2 RDS·모니터링 SG 인바운드 | `security.tf` | D1 |
 | V4-5 | IAM (실행·Task·배포 Role) | `iam.tf` | D1 |
 | V4-6 | 데이터 호스트 | `data_host.tf`, `templates/data-host/*`, `ssm.tf` | D1 |
-| V4-7 | 모듈 복사·단순화 (`anti_affinity_services`, 명시적 `instance_types`) | `modules/ecs-service`, `modules/ecs-asg` | D1 |
+| V4-7 | V2 모듈 참고해 직접 구현 (반대 배치 제약, 명시적 `instance_types`, `capacity_mode` 스위치) | `capacity.tf`, `services.tf` | D1 |
 | V4-8 | 클러스터, Capacity, Alloy | `cluster.tf`, `capacity.tf` | D1 |
 | V4-9 | 서비스, TG, 리스너 규칙 (헤더 조건) | `services.tf` | D1 |
 | V4-10 | 알람 | `alarms.tf` | D1 |

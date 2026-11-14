@@ -45,3 +45,20 @@ output "v4_parameters" {
     { MONGODB_URI = aws_ssm_parameter.mongo["uri"].arn },
   )
 }
+
+output "cluster_name" {
+  value = aws_ecs_cluster.this.name
+}
+
+output "service_names" {
+  value = [for s in aws_ecs_service.service : s.name]
+}
+
+output "task_definition_families" {
+  description = "CD가 새 revision을 등록하는 family"
+  value       = { for k, td in aws_ecs_task_definition.service : k => td.family }
+}
+
+output "target_group_arns" {
+  value = { for k, tg in aws_lb_target_group.service : k => tg.arn }
+}
