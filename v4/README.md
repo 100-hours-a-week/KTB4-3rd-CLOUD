@@ -29,6 +29,8 @@ V3(EKS) prod를 비용 최소 구성으로 옮기기 위한 별도 Terraform roo
 | `services.tf` | 서비스 4개(rest·websocket·frontend·fastapi) Task Definition, 서비스, TG, 리스너 규칙 | 작성 |
 | `data_host.tf`, `ssm.tf`, `templates/data-host/` | Kafka·MongoDB·Redis 데이터 호스트(On-Demand, 고정 IP, 데이터 EBS·일일 스냅샷·자동 복구), v4 파라미터 | 작성 |
 | `alarms.tf` | CloudWatch 알람, ECS·ASG 이벤트, Discord #incident 알림 | 작성 |
+| `../.github/workflows/v4/` | BE·FE·AI prod CD 템플릿 (앱 레포에 복사, `V4_ECS_DEPLOY_ROLE_ARN`) | 작성 |
+| `network.tf` NAT 인스턴스 | V2 NAT Gateway → v4 NAT 인스턴스 | 예정 (V4-13) |
 
 ## 사용
 
