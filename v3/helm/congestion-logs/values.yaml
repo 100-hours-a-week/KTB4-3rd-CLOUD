@@ -1,0 +1,2 @@
+region: ap-northeast-2
+image: public.ecr.aws/aws-observability/aws-for-fluent-bit:2.34.3.20261102

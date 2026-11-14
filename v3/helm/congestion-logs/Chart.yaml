@@ -1,0 +1,5 @@
+apiVersion: v2
+name: congestion-logs
+description: Export allowlisted congestion events to CloudWatch Logs
+version: 0.1.0
+type: application

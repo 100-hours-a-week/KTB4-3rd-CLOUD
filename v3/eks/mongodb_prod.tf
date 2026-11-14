@@ -232,7 +232,7 @@ resource "aws_instance" "mongodb_prod" {
   for_each = local.mongodb_prod_enabled ? local.mongodb_prod_nodes : {}
 
   ami                         = data.aws_ssm_parameter.al2023_kernel_6_12.value
-  instance_type               = "t3.medium"
+  instance_type               = "t3.small"
   subnet_id                   = data.aws_subnet.mongodb_prod[each.key].id
   private_ip                  = local.mongodb_prod_ips[each.key]
   vpc_security_group_ids      = [aws_security_group.mongodb_prod[0].id]

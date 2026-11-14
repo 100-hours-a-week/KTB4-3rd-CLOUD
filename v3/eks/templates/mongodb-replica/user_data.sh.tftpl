@@ -96,11 +96,11 @@ if ! docker inspect mongo >/dev/null 2>&1; then
     --env-file "$APP_DIR/.env" \
     -v "$DATA_MOUNT/db:/data/db" \
     -v "$APP_DIR/keyfile:/etc/mongo/keyfile:ro" \
-    --memory 3g \
+    --memory 1536m \
     --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep -q 1" \
     --health-interval 10s --health-timeout 5s --health-retries 12 \
     --log-driver json-file --log-opt max-size=10m --log-opt max-file=5 \
-    "$IMAGE" mongod --replSet rs0 --keyFile /etc/mongo/keyfile --bind_ip_all --wiredTigerCacheSizeGB 1
+    "$IMAGE" mongod --replSet rs0 --keyFile /etc/mongo/keyfile --bind_ip_all --wiredTigerCacheSizeGB 0.5
 fi
 
 for _ in $(seq 1 60); do
