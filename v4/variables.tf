@@ -201,16 +201,26 @@ variable "cutover_enabled" {
 }
 
 variable "listener_priorities" {
-  description = "V2 prod HTTPS 리스너에 추가하는 v4 규칙 우선순위. V2 prod 규칙(priority_base 100 이후)보다 앞서야 한다."
+  description = <<-EOT
+    V2 prod HTTPS 리스너에 추가하는 v4 규칙 우선순위 (2026-11-14 리스너 조회 기준).
+      1·2·3   : v4 (이 값)
+      5·6·8   : V2/EKS 가중치 규칙. 지금은 1·2·4라서 v4 apply 전에 V2-1로 옮긴다 (README 전환 런북)
+      10·20   : 옛 V2 규칙(moyeota-v2-websocket·rest). 같은 경로라 앞 규칙에 가려져 있다. 이보다 뒤로 옮기면 안 된다
+  EOT
   type = object({
     websocket = number
     rest      = number
     frontend  = number
   })
   default = {
-    websocket = 10
-    rest      = 11
-    frontend  = 13
+    websocket = 1
+    rest      = 2
+    frontend  = 3
+  }
+
+  validation {
+    condition     = alltrue([for p in values(var.listener_priorities) : p >= 1 && p < 5])
+    error_message = "v4 규칙은 V2/EKS 규칙(5·6·8)과 옛 V2 규칙(10·20)보다 앞선 1~4 사이여야 한다."
   }
 }
 

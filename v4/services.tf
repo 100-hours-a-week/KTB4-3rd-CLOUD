@@ -219,7 +219,7 @@ resource "aws_ecs_task_definition" "service" {
 # ALB: 서비스 전용 ip Target Group + V2 prod HTTPS 리스너에 v4 규칙
 #   cutover_enabled = false : 헤더 X-Moyeota-Target: v4 요청만 v4로 (테스트)
 #   cutover_enabled = true  : 경로가 맞으면 모두 v4로 (전환)
-#   V2 prod 규칙(priority_base 100 이후)보다 앞선 우선순위를 쓴다. V2-1 적용 전에는 V2 규칙(1·2·4)이 먼저 걸린다.
+#   우선순위 1·2·3. V2/EKS 가중치 규칙(V2-1로 5·6·8)과 옛 V2 규칙(10·20)보다 앞선다. V2-1 전에는 1·2가 겹쳐 apply가 실패한다.
 # ---------------------------------------------------------------------------
 
 resource "aws_lb_target_group" "service" {

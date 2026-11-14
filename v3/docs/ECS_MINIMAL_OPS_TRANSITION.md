@@ -251,16 +251,27 @@ v4/
 
 ### 5.10 ALB 라우팅과 전환 방식
 
-V2 prod 규칙은 우선순위 1(websocket)·2(rest)·4(frontend)를 쓴다(`v2/locals.tf` `priority_base = 1`). v4 규칙이 먼저 걸리도록 V2 쪽을 뒤로 민다.
+prod HTTPS 리스너 규칙 (2026-11-14 조회):
 
-| 단계 | V2 규칙 | v4 규칙 | 트래픽 |
+| 우선순위 | 조건 | 대상 |
+|---|---|---|
+| 1 | `/api/wss` | V3 EKS 100 / V2 ECS 0 |
+| 2 | `/api/*` | V3 EKS 100 / V2 ECS 0 |
+| 4 | `/*` | V3 EKS 100 / V2 ECS 0 |
+| 10, 20 | `/api/wss`, `/api/*` | 옛 V2 규칙 (`moyeota-v2-websocket`, `moyeota-v2-rest`, `v2/locals.tf`). 앞 규칙에 가려져 동작하지 않는다 |
+| default | — | `moyeota-v2-frontend` |
+
+- **prod 트래픽은 이미 100% EKS로 가고 있다.**
+- V2/EKS 가중치 규칙을 10 뒤로 옮기면 옛 V2 규칙이 먼저 걸려 트래픽이 옛 대상으로 빠진다. 그래서 1·2·4 → **5·6·8**(`priority_base` 1 → 5)로만 옮기고, v4는 **1·2·3**을 쓴다.
+
+| 단계 | V2/EKS 규칙 | v4 규칙 | 트래픽 |
 |---|---|---|---|
-| D1 준비 | `priority_base` 1 → **100** (101·102·104) | 10·11·13, **조건에 헤더 `X-Moyeota-Target: v4` 추가** | 일반 요청은 V2 규칙(EKS·ECS 가중치), 헤더 요청만 v4 |
+| D1 준비 | 1·2·4 → **5·6·8** | 1·2·3, **조건에 헤더 `X-Moyeota-Target: v4` 추가** | 일반 요청은 V2/EKS 규칙(EKS 100%), 헤더 요청만 v4 |
 | D2 전환 | 그대로 | **헤더 조건 제거** | 전부 v4 |
 | 롤백 | 그대로 | 헤더 조건 다시 추가 | V2 규칙(EKS)으로 복귀 |
 | D3 이후 | V2 prod ECS 스테이지 삭제와 함께 제거 | 유지 | v4 |
 
-- **D1의 V2 apply는 ALB 가중치를 ECS 100%로 되돌린다**(`alb-weight.sh` 주석). apply 직후 `alb-weight.sh prod set <현재값>`으로 원래 가중치를 복구한다. D0에서 현재 가중치를 기록해 둔다.
+- **V2 apply는 ALB 가중치를 ECS 100%로 되돌린다**(`alb-weight.sh` 주석). 지금 EKS 100%인 prod 트래픽이 옛 V2 ECS로 간다. 그래서 V2-1은 `aws elbv2 set-rule-priorities`로 **우선순위만** 바꾸고(가중치 유지), V2 코드(`priority_base = 5`)는 state를 맞추려고만 고친다. V2 apply는 D3(V2 prod ECS 삭제)까지 하지 않는다.
 
 ## 6. 근거 데이터
 
@@ -340,7 +351,7 @@ V2 prod 규칙은 우선순위 1(websocket)·2(rest)·4(frontend)를 쓴다(`v2/
 
 | # | 작업 | 파일 | 적용 |
 |---|---|---|---|
-| V2-1 | prod 리스너 우선순위 `priority_base` 1 → 100 | `v2/locals.tf` | D1 (직후 `alb-weight.sh`로 가중치 복구) |
+| V2-1 | prod 리스너 우선순위 1·2·4 → 5·6·8 (`set-rule-priorities`, 코드 `priority_base = 5`) | `v2/locals.tf` | D1, v4 apply 전 |
 | V2-2 | prod ECS 스테이지 삭제 | `v2/terraform.tfvars` (`ecs_stages`, `ecs_container_images.prod` 등) | D3 |
 | V2-3 | MSK·ElastiCache prod 삭제 | `v2/terraform.tfvars` (`msk_stages`, `elasticache_redis_stages`) | D3 |
 | V2-4 | RDS Single-AZ·micro | `v2/rds.tf` (`multi_az` 변수화), `v2/terraform.tfvars` (`rds_instance_class`) | D3 |
@@ -368,7 +379,7 @@ V2 prod 규칙은 우선순위 1(websocket)·2(rest)·4(frontend)를 쓴다(`v2/
 | 날 | 할 일 |
 |---|---|
 | **D0 사전** | Billing(남은 크레딧, month-to-date), AWS Budgets 알림($300·$400·$450). `alb-weight.sh prod status`로 현재 가중치 기록, V2 ECS prod 상태 확인. BE 확인(14절). 원하면 EKS stg 노드 0대·V2 nonprod 정리 |
-| **D1 구축** | v4 코드(V4-1~V4-11) 작성 → `terraform plan` 검토 → **v4 apply** (rest는 `APP_ROLE=rest`, 리스너 규칙은 헤더 조건). V2-1 apply → 즉시 `alb-weight.sh`로 가중치 복구. 헤더 요청으로 v4 스모크 테스트(로그인, API, websocket, fastapi 호출) |
+| **D1 구축** | v4 코드(V4-1~V4-11) 작성 → `terraform plan` 검토 → **v4 apply** (rest는 `APP_ROLE=rest`, 리스너 규칙은 헤더 조건). v4 apply 전에 V2-1(`set-rule-priorities`로 5·6·8, 가중치 유지). 헤더 요청으로 v4 스모크 테스트(로그인, API, websocket, fastapi 호출) |
 | **D2 전환** (트래픽 적은 시간) | ① EKS worker·matching 0 → ② lag 0 확인 → ③ MongoDB 덤프·복원 → ④ **v4 apply** (V4-12: rest `rest,worker,matching`, 헤더 조건 제거) → ⑤ 검증(11절) → ⑥ 관찰 |
 | **D3 정리** (24시간 이상 정상 후) | V3-2 (ArgoCD 앱 삭제 → 플랫폼 Helm 제거(TargetGroupBinding 먼저) → `terraform destroy` v3/eks) → V2-2~V2-5 apply (V2 prod ECS·규칙, MSK, ElastiCache 삭제, RDS Single-AZ·micro, nonprod 정리) |
 | **D4~D5** | V4-13 NAT 인스턴스 (`nat_mode = "instance"`) → 하루 관찰 → V2-6 (15절 확인 후) |
@@ -402,7 +413,7 @@ V2 prod 규칙은 우선순위 1(websocket)·2(rest)·4(frontend)를 쓴다(`v2/
 
 | 위험 | 대응 |
 |---|---|
-| V2 apply 시 ALB 가중치가 ECS 100%로 되돌아감 | V2 apply는 D1(V2-1)과 D3에만. D1은 직후 가중치 복구 |
+| V2 apply 시 ALB 가중치가 ECS 100%로 되돌아감 | V2-1은 CLI로 우선순위만 변경. V2 apply는 D3(V2 prod ECS 삭제)에만 |
 | v4와 EKS가 동시에 같은 RDS에서 스케줄러 실행 | D1에는 v4 rest를 `APP_ROLE=rest`로만. D2에 EKS 중지 후 확장 |
 | V2·v4 state가 같은 리소스를 건드림 | 4절 책임 경계 준수. v4는 V2 리소스를 data source로만 읽고, 추가하는 것은 v4 소유 리소스(SG 규칙, 리스너 규칙)뿐 |
 | 호스트당 태스크 2개 (ENI 한도) | 태스크 4개 = 호스트 2대. 배포는 기존 태스크를 먼저 내림 |
@@ -411,6 +422,7 @@ V2 prod 규칙은 우선순위 1(websocket)·2(rest)·4(frontend)를 쓴다(`v2/
 | 데이터 호스트 장애 | On-Demand, EBS 스냅샷, 재생성 런북(약 30분), Kafka는 outbox로 재발행 |
 | NAT 인스턴스 장애 | 자동 복구 알람, `nat_mode` 롤백 |
 | 배포·회수 때 스케줄러 중복·중단 | BE 확인 (ride-start·ride-end 락 없음, 자동 취소 약 121초) |
+| 옛 V2 리스너 규칙(10·20)이 V2/EKS 규칙보다 앞서게 됨 | V2/EKS 규칙은 5·6·8까지만 옮긴다. v4 변수 검증으로 v4 규칙을 1~4로 제한 |
 | `alb-weight.sh` TLS 조건 (Redis 전송 암호화) | 데이터 호스트 Redis는 VPC 내부 평문. 위험 수용으로 기록 |
 | t3·RDS CPU 크레딧 초과 요금 | 크레딧 알람 |
 
@@ -426,7 +438,8 @@ V2 prod 규칙은 우선순위 1(websocket)·2(rest)·4(frontend)를 쓴다(`v2/
 5. 외부 서비스에 서버 공인 IP 허용 목록이 있는가 (NAT 인스턴스 EIP가 바뀜)
 
 **사실 확인 (AWS 접근 필요)**
-6. 현재 ALB 가중치와 V2 ECS prod 실행 여부
+6. ~~현재 ALB 가중치~~ → **확인 (2026-11-14): prod 트래픽은 EKS 100%** (5.10절). V2 ECS prod 실행 여부는 남음
+   - 같은 날 v4 `terraform plan` 성공(127개 추가), 서브넷 CIDR 비어 있음, 필요한 SSM 키 33개 모두 있음, 리스너 우선순위 10·20에 옛 V2 규칙 발견
 7. 실제 일별 비용, 남은 크레딧과 11월 누적 사용액
 8. prod 이미지 digest의 ECR tag 유무 (lifecycle 정책 전)
 9. Service Connect 사이드카를 포함한 실제 태스크 메모리

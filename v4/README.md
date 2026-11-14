@@ -13,7 +13,7 @@ V3(EKS) prod를 비용 최소 구성으로 옮기기 위한 별도 Terraform roo
 | V2 소유, v4는 읽기만 (`shared.tf`) | VPC, public 서브넷, NAT Gateway, S3 Gateway Endpoint, prod ALB·HTTPS 리스너, RDS, ALB·RDS·모니터링 SG, GitHub OIDC Provider, 이미지 버킷, 앱 시크릿(`/moyeota/v2/prod/*`) |
 | v4 소유 | private 서브넷 2개와 라우팅 테이블, ECS 클러스터·용량·서비스·TG·리스너 규칙, 데이터 호스트, IAM, 알람, `/moyeota/v4/prod/*` 파라미터 |
 | v4가 V2 SG에 추가하는 규칙 | RDS 3306 ← rest·websocket 태스크, 모니터링 3100 ← v4 인스턴스(Alloy 로그), 모니터링 9090 ← rest·websocket·fastapi 태스크(OTLP 지표) |
-| v4가 V2 리소스에 추가하는 것 | prod HTTPS 리스너 규칙(우선순위 10·11·13), S3 Gateway Endpoint 라우팅 테이블 연결 |
+| v4가 V2 리소스에 추가하는 것 | prod HTTPS 리스너 규칙(우선순위 1·2·3), S3 Gateway Endpoint 라우팅 테이블 연결 |
 
 ## 파일
 
@@ -62,9 +62,9 @@ terraform plan
 
 | 서비스 | 태스크 (vCPU / 메모리) | 노출 | 비고 |
 |---|---|---|---|
-| rest | 1 / 2GiB (컨테이너 1792MiB + Service Connect 여유) | `/api/*` (우선순위 11) | `APP_ROLE=var.rest_app_role`, Service Connect 클라이언트(`http://fastapi:8000`), websocket과 다른 호스트 |
-| websocket | 0.5 / 1GiB | `/api/wss` (우선순위 10), 드레이닝 60초 | rest와 다른 호스트 |
-| frontend | 0.25 / 768MiB | `/*` (우선순위 13) | |
+| rest | 1 / 2GiB (컨테이너 1792MiB + Service Connect 여유) | `/api/*` (우선순위 2) | `APP_ROLE=var.rest_app_role`, Service Connect 클라이언트(`http://fastapi:8000`), websocket과 다른 호스트 |
+| websocket | 0.5 / 1GiB | `/api/wss` (우선순위 1), 드레이닝 60초 | rest와 다른 호스트 |
+| frontend | 0.25 / 768MiB | `/*` (우선순위 3) | |
 | fastapi | 0.5 / 1GiB (컨테이너 768MiB + Service Connect 여유) | 내부 전용 | Service Connect 서버, 모니터링 봇 값 미주입 |
 
 - 레플리카는 서비스마다 1개다. 배포는 기존 태스크를 먼저 내리고 새 태스크를 띄운다(약 2~3분 중단).
@@ -92,9 +92,26 @@ for g in backend broker ai frontend; do aws ssm get-parameters-by-path --path /m
 
 | 단계 | tfvars | 그 밖의 작업 |
 |---|---|---|
-| D1 구축 | `rest_app_role = "rest"`, `cutover_enabled = false` | **V2-1(V2 prod 규칙 우선순위 1 → 100)을 먼저 적용**한다. 그 전에는 V2 규칙(1·2·4)이 먼저 걸려 헤더 테스트가 v4로 오지 않는다. 테스트: `curl -H 'X-Moyeota-Target: v4' https://<도메인>/api/...` |
+| D1 구축 | `rest_app_role = "rest"`, `cutover_enabled = false` | **V2-1(V2/EKS 가중치 규칙 우선순위 1·2·4 → 5·6·8)을 먼저 적용**한다. 그 전에는 우선순위 1·2가 겹쳐 v4 apply가 실패한다. V2 apply는 가중치를 ECS 100%로 되돌리므로 `aws elbv2 set-rule-priorities`로 우선순위만 바꾼다(아래). 테스트: `curl -H 'X-Moyeota-Target: v4' https://<도메인>/api/...` |
 | D2 전환 | `rest_app_role = "rest,worker,matching"`, `cutover_enabled = true` | EKS worker·matching을 0으로 내리고 consumer lag 0, MongoDB 복원을 마친 뒤 apply. 이어서 rest를 새 revision으로 갱신한다(아래) |
 | 롤백 (D3 전) | `cutover_enabled = false`, `rest_app_role = "rest"` | apply 후 rest 갱신, EKS worker·matching을 1로 |
+
+### V2-1: V2/EKS 가중치 규칙 우선순위 옮기기 (v4 apply 전)
+
+prod 리스너의 V2/EKS 가중치 규칙(1 `/api/wss`, 2 `/api/*`, 4 `/*`)을 5·6·8로 옮겨 v4 규칙(1·2·3) 자리를 만든다.
+
+- **V2 `terraform apply`로 하지 않는다.** V2 apply는 가중치를 ECS 100%로 되돌려, 지금 EKS 100%인 prod 트래픽을 옛 V2 ECS로 보낸다.
+- 우선순위 10·20의 옛 V2 규칙보다 뒤로 옮기지 않는다. 옛 규칙이 먼저 걸리면 트래픽이 옛 대상(`moyeota-v2-websocket`, `moyeota-v2-rest`)으로 빠진다.
+- V2 코드 `v2/locals.tf`의 prod `priority_base`도 5로 고쳐 state와 맞춘다(별도 V2 PR, apply는 D3).
+
+```bash
+L=$(aws elbv2 describe-listeners --load-balancer-arn "$(aws elbv2 describe-load-balancers --names moyeota-v2-alb --query 'LoadBalancers[0].LoadBalancerArn' --output text)" --query 'Listeners[?Port==`443`].ListenerArn | [0]' --output text)
+r() { aws elbv2 describe-rules --listener-arn "$L" --query "Rules[?Priority=='$1'].RuleArn" --output text; }
+aws elbv2 set-rule-priorities --rule-priorities "RuleArn=$(r 4),Priority=8" "RuleArn=$(r 2),Priority=6" "RuleArn=$(r 1),Priority=5"
+aws elbv2 describe-rules --listener-arn "$L" --query 'Rules[].[Priority,Conditions[0].Values[0]]' --output text | sort -n
+```
+
+되돌리기: 같은 명령에서 8→4, 6→2, 5→1 (v4 규칙을 먼저 지운 뒤).
 
 Terraform으로 환경 변수를 바꾸면 새 revision만 등록되고 서비스는 그대로다(`ignore_changes`). 서비스를 갱신한다:
 
