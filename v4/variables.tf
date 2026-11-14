@@ -80,3 +80,51 @@ variable "github_deploy_environment" {
   type        = string
   default     = "production"
 }
+
+variable "data_host_instance_type" {
+  description = "데이터 호스트 타입. Kafka(heap 768MiB, 한도 1280MiB) + MongoDB(768MiB) + Redis(256MiB)가 들어가야 한다."
+  type        = string
+  default     = "t3.medium"
+}
+
+variable "data_host_ip_offset" {
+  description = "데이터 호스트 고정 사설 IP의 서브넷 내 위치 (app-a 서브넷 cidrhost 번호). AWS 예약(0~3)과 마지막 주소는 피한다."
+  type        = number
+  default     = 10
+
+  validation {
+    condition     = var.data_host_ip_offset >= 4 && var.data_host_ip_offset <= 250
+    error_message = "data_host_ip_offset은 4~250 사이여야 한다."
+  }
+}
+
+variable "data_host_images" {
+  description = "데이터 호스트 컨테이너 이미지. 고정 태그를 쓰고 latest를 쓰지 않는다. Kafka는 V2 dev·stg MSK와 같은 4.1 계열, MongoDB는 dev·stg와 같은 8.0이다."
+  type = object({
+    kafka = string
+    mongo = string
+    redis = string
+  })
+  default = {
+    kafka = "apache/kafka:4.1.2"
+    mongo = "mongo:8.0"
+    redis = "redis:7.2"
+  }
+
+  validation {
+    condition     = alltrue([for image in values(var.data_host_images) : !endswith(image, ":latest") && strcontains(image, ":")])
+    error_message = "data_host_images는 고정 태그를 써야 한다 (latest 금지)."
+  }
+}
+
+variable "data_host_data_gib" {
+  description = "데이터 EBS 크기(GiB). Kafka 로그(파티션당 256MiB 상한)와 MongoDB 데이터를 둔다."
+  type        = number
+  default     = 30
+}
+
+variable "data_host_snapshot_retain_days" {
+  description = "데이터 EBS 일일 스냅샷 보관 개수."
+  type        = number
+  default     = 7
+}

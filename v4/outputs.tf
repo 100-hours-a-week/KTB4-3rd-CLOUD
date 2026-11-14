@@ -27,3 +27,21 @@ output "deploy_role_arn" {
   description = "GitHub Actions v4 prod CD가 Assume하는 Role"
   value       = aws_iam_role.deploy.arn
 }
+
+output "data_host" {
+  description = "데이터 호스트. 접속: aws ssm start-session --target <instance_id>. 부트스트랩 로그: /var/log/data-host-bootstrap.log. 구성 재적용: sudo data-host-apply"
+  value = {
+    instance_id = aws_instance.data_host.id
+    private_ip  = local.data_host_private_ip
+    kafka       = "${local.data_host_private_ip}:${local.kafka_port}"
+    redis       = "${local.data_host_private_ip}:${local.redis_port}"
+  }
+}
+
+output "v4_parameters" {
+  description = "태스크에 주입할 v4 SSM 파라미터 ARN"
+  value = merge(
+    { for k, p in aws_ssm_parameter.broker : k => p.arn },
+    { MONGODB_URI = aws_ssm_parameter.mongo["uri"].arn },
+  )
+}

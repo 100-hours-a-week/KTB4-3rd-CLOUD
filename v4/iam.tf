@@ -1,5 +1,5 @@
 # v4 ECS IAM. V2 modules/ecs/ecs-cluster의 역할 분리를 따르되, prod 스테이지 하나만 둔다.
-#   1) Task Execution Role : V2 prod 앱 시크릿 경로와 v4 경로의 SSM만 읽는다
+#   1) Task Execution Role : V2 prod 앱 시크릿 경로와 v4 broker·backend 경로의 SSM만 읽는다
 #   2) Task Role           : 서비스별. rest만 이미지 버킷 권한을 갖는다
 #   3) 컨테이너 인스턴스 Role : 에이전트 액션을 v4 클러스터로만 제한한다
 #   4) Deploy Role         : GitHub Actions OIDC. v4 클러스터 서비스만 UpdateService, v4 Role만 PassRole
@@ -42,7 +42,7 @@ data "aws_iam_policy_document" "task_execution_config" {
   statement {
     sid       = "ReadAppParameters"
     actions   = ["ssm:GetParameters"]
-    resources = [local.v2_ssm_arn_pattern, local.v4_ssm_arn_pattern]
+    resources = concat([local.v2_ssm_arn_pattern], local.v4_ssm_arn_patterns)
   }
 
   # SecureString 복호화. SSM을 통한 호출일 때만 허용

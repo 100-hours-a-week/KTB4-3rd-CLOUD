@@ -28,5 +28,9 @@ locals {
   exec_log_group_name            = "/aws/ecs/${local.cluster_name}/exec"
 
   v2_ssm_arn_pattern = "arn:${local.partition}:ssm:${local.region}:${local.account_id}:parameter/${var.v2_config_path}/*"
-  v4_ssm_arn_pattern = "arn:${local.partition}:ssm:${local.region}:${local.account_id}:parameter/${var.v4_config_path}/*"
+  # 태스크는 v4 경로 중 broker·backend만 읽는다. mongo/*(root·app 비밀번호)는 데이터 호스트만 읽는다.
+  v4_ssm_arn_patterns = [
+    for group in ["broker", "backend"] :
+    "arn:${local.partition}:ssm:${local.region}:${local.account_id}:parameter/${var.v4_config_path}/${group}/*"
+  ]
 }
