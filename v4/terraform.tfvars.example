@@ -1,0 +1,17 @@
+# 복사해서 terraform.tfvars로 쓴다. terraform.tfvars는 커밋하지 않는다.
+aws_region      = "ap-northeast-2"
+aws_profile     = null
+v2_project_name = "moyeota-v2"
+
+# V2와 공유하는 VPC. 적용 전에 AWS 계정의 실제 값과 대조한다.
+vpc_id = "vpc-054f8f601f1b9f1b3"
+
+# v4 private 서브넷. V2(30·31·40·41·43·100·101·102), V3(50·51)와 겹치지 않는 대역이다.
+app_subnet_cidrs = {
+  a = "10.20.60.0/24"
+  c = "10.20.61.0/24"
+}
+
+v2_config_path = "moyeota/v2/prod"
+v4_config_path = "moyeota/v4/prod"
+images_bucket  = "moyeota-prod-images"
