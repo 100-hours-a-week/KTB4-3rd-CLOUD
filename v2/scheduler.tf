@@ -3,7 +3,7 @@
 #   - 대상 1: compute.tf의 aws_instance.host["dev"] (MySQL·Redis compose 호스트)
 #   - 대상 2: dev ECS 서비스(rest·websocket·frontend ...) desiredCount → 아래 "Dev ECS 서비스" 절 참고
 #             Spot ASG 인스턴스는 직접 끄지 않는다. 태스크가 0개가 되면 managed scaling이 0대로 줄인다.
-#   - 기본값: 매일 09:00 시작 / 24:00(=00:00) 중지, Asia/Seoul 기준 (variables.tf의 dev_instance_schedule)
+#   - 기본값: 평일(월~금) 09:00 시작 / 24:00(=다음날 00:00, 화~토) 중지, Asia/Seoul 기준 (variables.tf의 dev_instance_schedule)
 #   - Scheduler universal target(aws-sdk:ec2:startInstances / stopInstances)로 직접 호출 → Lambda 없음
 #   - 인스턴스 실행 상태는 Terraform이 관리하지 않으므로 중지돼 있어도 plan에 drift가 생기지 않는다
 #   - 재시작 후 데이터 EBS는 fstab(nofail)로, 컨테이너는 docker enable + restart: unless-stopped로 복구된다
