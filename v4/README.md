@@ -28,7 +28,7 @@ V3(EKS) prod를 비용 최소 구성으로 옮기기 위한 별도 Terraform roo
 | `capacity.tf` | Spot ASG(min 2 / max 3, 2a·2c) + On-Demand 폴백 ASG(min 0), Capacity Provider | 작성 |
 | `services.tf` | 서비스 4개(rest·websocket·frontend·fastapi) Task Definition, 서비스, TG, 리스너 규칙 | 작성 |
 | `data_host.tf`, `ssm.tf`, `templates/data-host/` | Kafka·MongoDB·Redis 데이터 호스트(On-Demand, 고정 IP, 데이터 EBS·일일 스냅샷·자동 복구), v4 파라미터 | 작성 |
-| `alarms.tf` | 알람, Spot 회수 알림, Discord | 예정 (V4-10) |
+| `alarms.tf` | CloudWatch 알람, ECS·ASG 이벤트, Discord #incident 알림 | 작성 |
 
 ## 사용
 
@@ -107,3 +107,23 @@ aws ecs update-service --cluster moyeota-v4-prod --service rest --task-definitio
 1. 알람(태스크 수 부족) 또는 `aws ecs describe-services`에서 태스크가 PROVISIONING에 머무는지 확인한다.
 2. `capacity_mode = "od"`로 바꿔 apply한다. 서비스가 On-Demand ASG(t3.medium)로 다시 배치된다.
 3. Spot 용량이 돌아오면 `capacity_mode = "spot"`으로 되돌린다.
+
+## 알람과 알림 (`alarms.tf`)
+
+모든 알림은 Discord #incident(`/moyeota/v2/monitoring/DISCORD_WEBHOOK_INCIDENT`)로 간다. Container Insights를 껐기 때문에 태스크 수 지표 대신 TG 정상 대상 수와 ECS 이벤트로 서비스 중단을 본다.
+
+| 대상 | 알람·이벤트 | 기준 |
+|---|---|---|
+| rest·websocket·frontend | `<svc>-no-healthy-target` | 정상 대상 0개 3분 |
+| rest·websocket·frontend | `<svc>-5xx-ratio` | 5xx 5% 초과, 5분 중 3분 (분당 요청 10건 이상일 때만) |
+| rest | `rest-p95` | p95 1초 초과, 5분 중 3분 |
+| websocket | `websocket-connection-errors` | 대상 연결 오류 발생 |
+| 서비스 4개 | `<svc>-memory` | 메모리 사용률 90% 초과 10분 |
+| RDS | `rds-connections`, `rds-cpu`, `rds-surplus-credits-charged`, `rds-free-storage` | 연결 70개, CPU 80% 15분, 크레딧 초과 과금, 남은 공간 2GiB 미만 |
+| 데이터 호스트 | `data-host-system-check`(자동 복구), `data-host-instance-check`, `data-host-cpu` | 상태 검사 실패, CPU 80% 15분 |
+| ECS 서비스 | 이벤트 `ECS Service Action` WARN·ERROR | 배치 실패, 태스크 시작 실패 |
+| ECS 배포 | 이벤트 `SERVICE_DEPLOYMENT_FAILED` | circuit breaker 롤백 |
+| 앱 호스트 ASG | 이벤트 `EC2 Instance Terminate Successful`, `EC2 Instance Launch Unsuccessful` | Spot 회수·교체, Spot 용량 부족 |
+
+- 데이터 호스트의 메모리·디스크는 CloudWatch 에이전트가 없어 알람이 없다. `docker stats`, `df -h /mnt/data`로 확인한다.
+- 알람 이름은 모두 `moyeota-v4-prod-`로 시작한다. 이 접두사의 알람 상태 변화만 Discord로 간다.

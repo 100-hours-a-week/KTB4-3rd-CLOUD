@@ -230,3 +230,9 @@ variable "alloy_image" {
   type    = string
   default = "grafana/alloy:v1.20.1"
 }
+
+variable "discord_webhook_parameter" {
+  description = "Discord #incident webhook URL이 든 SSM SecureString (V2·V3 알람과 같은 채널)."
+  type        = string
+  default     = "/moyeota/v2/monitoring/DISCORD_WEBHOOK_INCIDENT"
+}
