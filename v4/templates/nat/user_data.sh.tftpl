@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# v4 NAT 인스턴스 부트스트랩 (nat.tf, Amazon Linux 2023 arm64)
+#   1) IP 포워딩  2) v4 서브넷에서 온 트래픽만 MASQUERADE  3) 재부팅 뒤에도 유지
+set -Eeuo pipefail
+exec > >(tee /var/log/nat-bootstrap.log | logger -t nat-bootstrap -s 2>/dev/console) 2>&1
+
+systemctl enable --now amazon-ssm-agent
+
+cat >/etc/sysctl.d/90-nat.conf <<'SYSCTL'
+net.ipv4.ip_forward = 1
+SYSCTL
+sysctl --system >/dev/null
+
+dnf install -y iptables-services
+systemctl enable iptables
+
+iface="$(ip -o -4 route show to default | awk '{print $5; exit}')"
+[[ -n "$${iface}" ]] || { echo "default route interface not found" >&2; exit 1; }
+
+iptables -t nat -F POSTROUTING
+iptables -F FORWARD
+iptables -P FORWARD DROP
+iptables -A FORWARD -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+%{ for cidr in source_cidrs ~}
+iptables -A FORWARD -i "$${iface}" -s ${cidr} -j ACCEPT
+iptables -t nat -A POSTROUTING -o "$${iface}" -s ${cidr} -j MASQUERADE
+%{ endfor ~}
+
+# iptables-services는 /etc/sysconfig/iptables를 부팅 때 복원한다
+iptables-save > /etc/sysconfig/iptables
+systemctl restart iptables
+
+echo "NAT ready on $${iface} for: ${join(" ", source_cidrs)}"

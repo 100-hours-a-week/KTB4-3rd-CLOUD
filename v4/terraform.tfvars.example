@@ -1,0 +1,40 @@
+# 복사해서 terraform.tfvars로 쓴다. terraform.tfvars는 커밋하지 않는다.
+aws_region      = "ap-northeast-2"
+aws_profile     = null
+v2_project_name = "moyeota-v2"
+
+# V2와 공유하는 VPC. 적용 전에 AWS 계정의 실제 값과 대조한다.
+vpc_id = "vpc-054f8f601f1b9f1b3"
+
+# v4 private 서브넷. V2(30·31·40·41·43·100·101·102), V3(50·51)와 겹치지 않는 대역이다.
+app_subnet_cidrs = {
+  a = "10.20.60.0/24"
+  c = "10.20.61.0/24"
+}
+
+v2_config_path = "moyeota/v2/prod"
+v4_config_path = "moyeota/v4/prod"
+images_bucket  = "moyeota-prod-images"
+
+# 첫 배포 이미지 (V3 prod digest). 이후는 CD가 반영한다.
+image_digests = {
+  be = "sha256:0a3085360edc6bd61aead3835ef9aff3c88af6c26e9dc375234167fd558a892b"
+  fe = "sha256:933eb4e70030c8ea0a8222fb0b02c93fdcbb5801775975655f9d1956f69d9710"
+  ai = "sha256:de8c126d79ac7df0c3e1f85ff08220c9abcda67724793151114e4b235eecf25e"
+}
+
+# 전환 단계 (README 절차)
+#   D1 테스트: rest_app_role = "rest",                 cutover_enabled = false
+#   D2 전환  : rest_app_role = "rest,worker,matching", cutover_enabled = true
+rest_app_role   = "rest"
+cutover_enabled = false
+
+# Spot 용량 부족 때 "od"로 바꿔 apply한다
+capacity_mode = "spot"
+
+# NAT 인스턴스 (D4~D5). 1) enabled = true로 만들고 확인 → 2) nat_mode = "instance"로 경로 전환
+nat_instance_enabled = false
+nat_mode             = "v2_gateway"
+
+# V3 MongoDB 이관 (D2, v4/MONGODB_MIGRATION.md). 이관 동안만 true, V3 destroy 전에 false
+mongo_migration_enabled = false

@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# v4 데이터 호스트 컨테이너를 맞춘다. 다시 실행해도 된다.
+#   data-host-apply                 : 없는 컨테이너만 만들고, 있는 컨테이너는 시작만 한다. 토픽과 MongoDB 앱 계정을 맞춘다.
+#   data-host-apply --recreate NAME : NAME(kafka|mongo|redis) 컨테이너를 지우고 다시 만든다. 데이터는 /mnt/data에 남는다.
+# 이미지를 바꿀 때는 이 스크립트의 이미지 값을 고친 뒤 --recreate로 교체한다.
+set -Eeuo pipefail
+export AWS_DEFAULT_REGION="${aws_region}"
+
+APP_DIR="/opt/data-host"
+DATA_DIR="/mnt/data"
+NETWORK="data-host"
+PRIVATE_IP="${private_ip}"
+
+KAFKA_IMAGE="${kafka_image}"
+MONGO_IMAGE="${mongo_image}"
+REDIS_IMAGE="${redis_image}"
+
+recreate=""
+if [[ "$${1:-}" == "--recreate" ]]; then
+  recreate="$${2:?--recreate needs kafka, mongo or redis}"
+  [[ "$${recreate}" =~ ^(kafka|mongo|redis)$ ]] || { echo "unknown container: $${recreate}" >&2; exit 1; }
+fi
+
+mountpoint -q "$${DATA_DIR}" || { echo "$${DATA_DIR} is not mounted" >&2; exit 1; }
+docker network inspect "$${NETWORK}" >/dev/null 2>&1 || docker network create "$${NETWORK}" >/dev/null
+
+# 컨테이너가 있으면 시작만 하고, 없으면 run_cmd로 만든다.
+ensure_container() {
+  local name="$1"
+  shift
+  if [[ "$${recreate}" == "$${name}" ]] && docker inspect "$${name}" >/dev/null 2>&1; then
+    docker rm -f "$${name}" >/dev/null
+  fi
+  if docker inspect "$${name}" >/dev/null 2>&1; then
+    docker start "$${name}" >/dev/null
+  else
+    docker run -d --name "$${name}" --restart always --network "$${NETWORK}" \
+      --log-driver json-file --log-opt max-size=10m --log-opt max-file=5 \
+      "$@" >/dev/null
+  fi
+}
+
+wait_healthy() {
+  local name="$1" status=""
+  for _ in $(seq 1 60); do
+    status="$(docker inspect -f '{{.State.Health.Status}}' "$${name}" 2>/dev/null || true)"
+    [[ "$${status}" == "healthy" ]] && return 0
+    sleep 5
+  done
+  echo "$${name} is not healthy: $${status}" >&2
+  docker logs --tail 30 "$${name}" >&2 || true
+  return 1
+}
+
+ensure_password() {
+  local name="$1" value
+  value="$(aws ssm get-parameter --name "$${name}" --with-decryption --query Parameter.Value --output text)"
+  if [[ -z "$${value}" || "$${value}" == "CHANGE_ME" ]]; then
+    value="$(openssl rand -hex 32)"
+    aws ssm put-parameter --name "$${name}" --type SecureString --overwrite --value "$${value}" >/dev/null
+  fi
+  printf '%s' "$${value}"
+}
+
+# ---------------------------------------------------------------------------
+# Kafka (KRaft 단일 노드). 이미지 사용자 uid 1000이 데이터 디렉터리에 쓸 수 있어야 한다.
+#   EXTERNAL(9092)만 호스트에 publish한다. INTERNAL(19092)은 data-host 네트워크 안에서 토픽 생성에만 쓴다.
+#   파티션당 보존 상한 256MiB: 파티션 약 76개 × 256MiB ≈ 19GiB로 데이터 EBS 안에 들어간다.
+# ---------------------------------------------------------------------------
+install -d -m 0750 -o 1000 -g 1000 "$${DATA_DIR}/kafka"
+ensure_container kafka \
+  -p ${kafka_port}:${kafka_port} \
+  -v "$${DATA_DIR}/kafka:/var/lib/kafka/data" \
+  --memory 1280m \
+  --stop-timeout 60 \
+  -e CLUSTER_ID=bW95ZW90YS12NC1wcm9kMA \
+  -e KAFKA_NODE_ID=1 \
+  -e KAFKA_PROCESS_ROLES=broker,controller \
+  -e KAFKA_CONTROLLER_QUORUM_VOTERS=1@localhost:9093 \
+  -e KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER \
+  -e KAFKA_INTER_BROKER_LISTENER_NAME=INTERNAL \
+  -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT \
+  -e KAFKA_LISTENERS=EXTERNAL://:${kafka_port},INTERNAL://:19092,CONTROLLER://:9093 \
+  -e "KAFKA_ADVERTISED_LISTENERS=EXTERNAL://$${PRIVATE_IP}:${kafka_port},INTERNAL://kafka:19092" \
+  -e KAFKA_AUTO_CREATE_TOPICS_ENABLE=false \
+  -e KAFKA_DEFAULT_REPLICATION_FACTOR=1 \
+  -e KAFKA_MIN_INSYNC_REPLICAS=1 \
+  -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1 \
+  -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1 \
+  -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1 \
+  -e KAFKA_LOG_DIRS=/var/lib/kafka/data \
+  -e KAFKA_LOG_RETENTION_BYTES=268435456 \
+  -e "KAFKA_HEAP_OPTS=-Xms768m -Xmx768m" \
+  -e TZ=Asia/Seoul \
+  --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:19092 >/dev/null 2>&1" \
+  --health-interval 15s --health-timeout 10s --health-retries 10 --health-start-period 30s \
+  "$${KAFKA_IMAGE}"
+
+# ---------------------------------------------------------------------------
+# MongoDB (인증 사용, 앱 계정 moyeota는 moyeota DB readWrite만)
+# ---------------------------------------------------------------------------
+root_password="$(ensure_password "${root_password_param}")"
+app_password="$(ensure_password "${app_password_param}")"
+
+umask 077
+printf 'MONGO_INITDB_ROOT_USERNAME=root\nMONGO_INITDB_ROOT_PASSWORD=%s\nMOYEOTA_APP_PASSWORD=%s\nTZ=Asia/Seoul\n' \
+  "$${root_password}" "$${app_password}" > "$${APP_DIR}/mongo.env"
+umask 022
+
+cat >"$${APP_DIR}/init-app-user.js" <<'JS'
+const appDb = db.getSiblingDB("moyeota");
+const spec = { pwd: process.env.MOYEOTA_APP_PASSWORD, roles: [{ role: "readWrite", db: "moyeota" }] };
+if (appDb.getUser("moyeota")) {
+  appDb.updateUser("moyeota", spec);
+} else {
+  appDb.createUser({ user: "moyeota", ...spec });
+}
+JS
+
+install -d -m 0755 "$${DATA_DIR}/mongo"
+ensure_container mongo \
+  --env-file "$${APP_DIR}/mongo.env" \
+  -p ${mongo_port}:27017 \
+  -v "$${DATA_DIR}/mongo:/data/db" \
+  -v "$${APP_DIR}/init-app-user.js:/opt/init-app-user.js:ro" \
+  --memory 768m \
+  --health-cmd "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' | grep -q 1" \
+  --health-interval 10s --health-timeout 5s --health-retries 12 \
+  "$${MONGO_IMAGE}" --wiredTigerCacheSizeGB 0.25
+
+# ---------------------------------------------------------------------------
+# Redis (웹소켓 relay Pub/Sub와 캐시 전용, 디스크에 저장하지 않는다)
+# ---------------------------------------------------------------------------
+ensure_container redis \
+  -p ${redis_port}:6379 \
+  --memory 256m \
+  --health-cmd "redis-cli ping | grep -q PONG" \
+  --health-interval 10s --health-timeout 3s --health-retries 6 \
+  "$${REDIS_IMAGE}" redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy allkeys-lru
+
+wait_healthy kafka
+wait_healthy mongo
+wait_healthy redis
+
+# 토픽 생성 (없으면 만들고, 있으면 설정만 맞춘다)
+docker run --rm --network "$${NETWORK}" \
+  -e KAFKA_BOOTSTRAP_SERVERS=kafka:19092 \
+  -v "$${APP_DIR}/topics.sh:/opt/init/topics.sh:ro" \
+  --entrypoint /bin/sh "$${KAFKA_IMAGE}" /opt/init/topics.sh
+
+# MongoDB 앱 계정과 접속 URI
+docker exec mongo sh -c 'mongosh --quiet -u root -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin /opt/init-app-user.js'
+uri="mongodb://moyeota:$${app_password}@$${PRIVATE_IP}:${mongo_port}/moyeota?authSource=moyeota"
+aws ssm put-parameter --name "${uri_param}" --type SecureString --overwrite --value "$${uri}" >/dev/null
+
+echo "data-host-apply 완료: kafka $${PRIVATE_IP}:${kafka_port}, mongo $${PRIVATE_IP}:${mongo_port}, redis $${PRIVATE_IP}:${redis_port}"
