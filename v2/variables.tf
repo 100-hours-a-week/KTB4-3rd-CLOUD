@@ -398,7 +398,7 @@ variable "ecs_container_images" {
 
 variable "ecs_prod_alb_cutover" {
   description = <<-EOT
-    Prod ALB의 ECS 규칙(우선순위 1~4)은 Compose 규칙(10·20)과 기본 동작(Compose frontend)보다 항상 먼저 평가된다.
+    Prod ALB의 ECS 규칙(우선순위 5~8)은 Compose 규칙(10·20)과 기본 동작(Compose frontend)보다 항상 먼저 평가된다.
     false(기본): ECS 규칙에 X-Moyeota-Stage: prod 헤더 조건을 붙인다 → 헤더가 있는 스모크 테스트 요청만 ECS로, 나머지는 Compose로 간다.
     true       : 헤더 조건을 뺀다 → Prod ALB로 들어온 모든 요청이 ECS로 간다.
     운영 트래픽이 Prod ALB로 들어오는 시점은 moyeota.com DNS 전환이므로, DNS 전환 전에 true로 apply한다.
