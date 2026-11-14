@@ -1,6 +1,6 @@
 # v4 전용 private 서브넷과 라우팅 테이블. V2 라우팅 테이블은 건드리지 않는다.
 # 앱 호스트(Spot)는 2a·2c 두 서브넷에, 데이터 호스트는 2a 서브넷에 둔다.
-# 기본 경로는 당분간 V2 NAT Gateway를 쓴다. NAT 인스턴스 전환은 별도 작업(설계 V4-13)이다.
+# 기본 경로는 var.nat_mode로 고른다: v2_gateway(V2 NAT Gateway) 또는 instance(v4 NAT 인스턴스, nat.tf).
 
 resource "aws_subnet" "app" {
   for_each = var.app_subnet_cidrs
@@ -24,10 +24,19 @@ resource "aws_route_table" "app" {
   }
 }
 
+# 대상만 바꾸는 변경은 ReplaceRoute로 제자리에서 반영된다 (경로가 비는 시간 없음).
 resource "aws_route" "app_default" {
   route_table_id         = aws_route_table.app.id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = data.aws_nat_gateway.v2.id
+  nat_gateway_id         = var.nat_mode == "v2_gateway" ? data.aws_nat_gateway.v2.id : null
+  network_interface_id   = var.nat_mode == "instance" ? one(aws_network_interface.nat[*].id) : null
+
+  lifecycle {
+    precondition {
+      condition     = var.nat_mode == "v2_gateway" || var.nat_instance_enabled
+      error_message = "nat_mode = \"instance\"는 nat_instance_enabled = true로 NAT 인스턴스를 먼저 만든 뒤에 쓴다."
+    }
+  }
 }
 
 resource "aws_route_table_association" "app" {

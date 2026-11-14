@@ -30,7 +30,7 @@ V3(EKS) prod를 비용 최소 구성으로 옮기기 위한 별도 Terraform roo
 | `data_host.tf`, `ssm.tf`, `templates/data-host/` | Kafka·MongoDB·Redis 데이터 호스트(On-Demand, 고정 IP, 데이터 EBS·일일 스냅샷·자동 복구), v4 파라미터 | 작성 |
 | `alarms.tf` | CloudWatch 알람, ECS·ASG 이벤트, Discord #incident 알림 | 작성 |
 | `../.github/workflows/v4/` | BE·FE·AI prod CD 템플릿 (앱 레포에 복사, `V4_ECS_DEPLOY_ROLE_ARN`) | 작성 |
-| `network.tf` NAT 인스턴스 | V2 NAT Gateway → v4 NAT 인스턴스 | 예정 (V4-13) |
+| `nat.tf`, `templates/nat/` | v4 NAT 인스턴스(t4g.nano, 전용 ENI·EIP, 자동 복구·재부팅 알람). `nat_instance_enabled`·`nat_mode` 스위치 | 작성 |
 
 ## 사용
 
@@ -129,3 +129,19 @@ aws ecs update-service --cluster moyeota-v4-prod --service rest --task-definitio
 
 - 데이터 호스트의 메모리·디스크는 CloudWatch 에이전트가 없어 알람이 없다. `docker stats`, `df -h /mnt/data`로 확인한다.
 - 알람 이름은 모두 `moyeota-v4-prod-`로 시작한다. 이 접두사의 알람 상태 변화만 Discord로 간다.
+
+## NAT 인스턴스 전환 런북 (설계 10절 D4~D5)
+
+v4 서브넷의 기본 경로를 V2 NAT Gateway에서 v4 NAT 인스턴스로 바꾼다. 전환이 안정된 뒤(D3 이후) 진행한다.
+
+| 단계 | tfvars | 확인 |
+|---|---|---|
+| 1. 인스턴스 생성 | `nat_instance_enabled = true` | `terraform output nat_instance`로 공인 IP 확인. 외부 서비스에 서버 IP 허용 목록이 있으면 이 IP를 먼저 등록한다. SSM 접속 후 `cat /var/log/nat-bootstrap.log`, `sudo iptables -t nat -S` |
+| 2. 경로 전환 | `nat_mode = "instance"` | 데이터 호스트에서 `curl -sI https://registry-1.docker.io`, 태스크 로그에서 외부 API(카카오, OpenAI) 오류가 없는지, 새 태스크가 ECR 이미지를 받는지(서비스 하나 재배포) |
+| 3. 관찰 | — | 하루 동안 알람·로그 확인 |
+| 4. V2 NAT Gateway 삭제 | V2 작업(V2-6) | 설계 15절 조건 확인 후. 지우기 전까지는 롤백할 수 있다 |
+| 롤백 | `nat_mode = "v2_gateway"` | 경로 대상만 바뀐다(ReplaceRoute) |
+
+- 경로는 인스턴스가 아니라 전용 ENI를 가리킨다. 하드웨어 장애는 자동 복구(같은 인스턴스·ENI·EIP), OS 무응답은 자동 재부팅으로 돌아온다. 둘 다 Discord로 알린다.
+- 인스턴스가 멈추면 v4 서브넷의 외부 통신(ECR pull, SSM, 외부 API)이 끊긴다. 이미 떠 있는 태스크는 계속 돌지만 외부 API 호출은 실패한다. 장애가 길어지면 롤백한다.
+- S3(ECR 레이어, 이미지 버킷)는 Gateway Endpoint로 가므로 NAT를 거치지 않는다.

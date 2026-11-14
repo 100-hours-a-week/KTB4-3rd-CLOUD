@@ -236,3 +236,26 @@ variable "discord_webhook_parameter" {
   type        = string
   default     = "/moyeota/v2/monitoring/DISCORD_WEBHOOK_INCIDENT"
 }
+
+variable "nat_instance_enabled" {
+  description = "v4 NAT 인스턴스를 만든다. 만든 뒤 확인하고 nat_mode를 instance로 바꾼다 (nat.tf)."
+  type        = bool
+  default     = false
+}
+
+variable "nat_mode" {
+  description = "v4 서브넷 기본 경로. v2_gateway: V2 NAT Gateway, instance: v4 NAT 인스턴스 ENI. 롤백은 v2_gateway로 되돌린다."
+  type        = string
+  default     = "v2_gateway"
+
+  validation {
+    condition     = contains(["v2_gateway", "instance"], var.nat_mode)
+    error_message = "nat_mode는 v2_gateway 또는 instance다."
+  }
+}
+
+variable "nat_instance_type" {
+  description = "NAT 인스턴스 타입 (arm64). 트래픽이 적어 t4g.nano로 충분하다."
+  type        = string
+  default     = "t4g.nano"
+}

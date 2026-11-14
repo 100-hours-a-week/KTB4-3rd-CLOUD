@@ -31,3 +31,7 @@ cutover_enabled = false
 
 # Spot 용량 부족 때 "od"로 바꿔 apply한다
 capacity_mode = "spot"
+
+# NAT 인스턴스 (D4~D5). 1) enabled = true로 만들고 확인 → 2) nat_mode = "instance"로 경로 전환
+nat_instance_enabled = false
+nat_mode             = "v2_gateway"

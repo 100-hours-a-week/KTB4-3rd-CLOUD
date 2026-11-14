@@ -62,3 +62,13 @@ output "task_definition_families" {
 output "target_group_arns" {
   value = { for k, tg in aws_lb_target_group.service : k => tg.arn }
 }
+
+output "nat_instance" {
+  description = "v4 NAT 인스턴스. 나가는 공인 IP가 V2 NAT Gateway와 다르다. 접속: aws ssm start-session --target <instance_id>"
+  value = var.nat_instance_enabled ? {
+    instance_id = aws_instance.nat[0].id
+    eni_id      = aws_network_interface.nat[0].id
+    public_ip   = aws_eip.nat[0].public_ip
+    route_mode  = var.nat_mode
+  } : null
+}
