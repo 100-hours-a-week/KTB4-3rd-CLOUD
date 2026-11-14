@@ -370,7 +370,7 @@ prod HTTPS 리스너 규칙 (2026-11-14 조회):
 | 저장소 | 방법 | 영향 |
 |---|---|---|
 | MySQL | 이관 없음 (V2 RDS 공유). D3에 Single-AZ·micro로 변경 (수동 스냅샷 후) | 변경 중 몇 분 중단 |
-| MongoDB | EKS worker를 0으로 → V3 primary에서 `mongodump` → S3 → v4 데이터 호스트에서 `mongorestore` | 혼잡도 데이터만. 수 분 |
+| MongoDB | EKS worker·matching을 0으로 → v4 데이터 호스트가 V3 replica set에 직접 접속해 `mongodump \| mongorestore --drop` (S3 미사용, `mongo_migration_enabled` 동안만 V3 SG·SSM 허용). 절차: `v4/MONGODB_MIGRATION.md`, 도구: `v4/scripts/mongo-migrate.sh` | 혼잡도 데이터만. 수 분 |
 | Kafka | outbox 패턴이라 DB가 원본이다. EKS worker 중지로 발행을 멈추고 consumer lag 0 확인 후 전환. 미발행 outbox는 v4 rest(worker 역할)가 새 Kafka로 보낸다 | 진행 중이던 매칭 Streams 상태는 사라진다 |
 | Redis | 이관 없음 (relay와 캐시만) | 재로그인 불필요, 캐시는 다시 채워진다 |
 

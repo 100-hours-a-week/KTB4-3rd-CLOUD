@@ -31,6 +31,7 @@ V3(EKS) prod를 비용 최소 구성으로 옮기기 위한 별도 Terraform roo
 | `alarms.tf` | CloudWatch 알람, ECS·ASG 이벤트, Discord #incident 알림 | 작성 |
 | `../.github/workflows/v4/` | BE·FE·AI prod CD 템플릿 (앱 레포에 복사, `V4_ECS_DEPLOY_ROLE_ARN`) | 작성 |
 | `nat.tf`, `templates/nat/` | v4 NAT 인스턴스(t4g.nano, 전용 ENI·EIP, 자동 복구·재부팅 알람). `nat_instance_enabled`·`nat_mode` 스위치 | 작성 |
+| `mongo_migration.tf`, `scripts/mongo-migrate.sh`, `MONGODB_MIGRATION.md` | V3 MongoDB → v4 데이터 호스트 이관. `mongo_migration_enabled` 동안만 V3 SG 인바운드·V3 SSM 읽기 허용 | 작성 |
 
 ## 사용
 

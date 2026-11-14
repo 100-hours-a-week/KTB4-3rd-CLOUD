@@ -35,3 +35,6 @@ capacity_mode = "spot"
 # NAT 인스턴스 (D4~D5). 1) enabled = true로 만들고 확인 → 2) nat_mode = "instance"로 경로 전환
 nat_instance_enabled = false
 nat_mode             = "v2_gateway"
+
+# V3 MongoDB 이관 (D2, v4/MONGODB_MIGRATION.md). 이관 동안만 true, V3 destroy 전에 false
+mongo_migration_enabled = false
