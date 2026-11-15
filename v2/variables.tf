@@ -820,6 +820,18 @@ variable "stg_data_layer_enabled" {
   default     = true
 }
 
+variable "prod_data_layer_enabled" {
+  description = <<-EOT
+    prod MSK·ElastiCache Redis 스위치 (stg_data_layer.tf). v4 전환 후 prod 브로커는 v4 데이터 호스트가 맡는다.
+      true  : msk_stages·elasticache_redis_stages에 든 prod 클러스터를 운영한다.
+      false : prod MSK 클러스터와 prod Redis 복제 그룹만 삭제한다. 보안그룹과 SSM 파라미터는 남긴다
+              (v4 rest·websocket이 /moyeota/v2/prod/broker/CHAT_FANOUT_CHANNEL을 읽는다).
+    prod RDS는 이 스위치와 관계없다.
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "stg_rds_identifier" {
   description = "stg_data_layer_enabled = false일 때 중지 상태로 유지할 stg RDS 인스턴스 ID (CLI 관리)"
   type        = string

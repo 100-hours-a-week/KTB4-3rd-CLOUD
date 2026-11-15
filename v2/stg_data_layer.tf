@@ -17,7 +17,11 @@
 # =============================================================================
 
 locals {
-  stg_data_layer_paused_stages = var.stg_data_layer_enabled ? toset([]) : toset(["stg"])
+  # prod도 같은 방식으로 끈다 (var.prod_data_layer_enabled, v4 전환 후 prod 브로커 정리)
+  stg_data_layer_paused_stages = setunion(
+    var.stg_data_layer_enabled ? toset([]) : toset(["stg"]),
+    var.prod_data_layer_enabled ? toset([]) : toset(["prod"]),
+  )
 
   # 꺼진 동안 SSM 주소에 넣는 값. .invalid는 DNS 조회가 항상 실패하는 예약 도메인이다.
   stg_data_layer_paused_host = "stg-data-layer-paused.invalid"

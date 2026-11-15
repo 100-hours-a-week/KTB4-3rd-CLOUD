@@ -197,6 +197,10 @@ monitoring_grafana_alerting_enabled = false
 # stg 데이터 계층 스위치 (stg_data_layer.tf) — 절차: STG_DATA_LAYER_TOGGLE.md, 실행: scripts/stg-data-layer.sh
 #   false면 stg MSK·Redis를 삭제하고(보안그룹·SSM은 남김) stg RDS를 중지 상태로 유지한다
 # stg_data_layer_enabled = true
+# prod MSK·Redis 클러스터 스위치 — v4 전환 후 false (클러스터만 삭제, 보안그룹·SSM은 남김)
+#   prod ECS 스테이지는 /moyeota/v2/prod/* SSM 파라미터(v4가 읽음)를 소유하므로 ecs_stages에서 빼지 않는다
+#   전체 apply 금지: ASG·오토스케일링 최소값, dev 스케줄이 되살아난다. -target으로만 적용한다
+# prod_data_layer_enabled = true
 
 # dev Kafka EC2 1노드 (kafka_dev.tf) — dev 스케줄로 시작·중지. dev를 msk_stages에 함께 넣지 않는다
 # dev_kafka_enabled = true
