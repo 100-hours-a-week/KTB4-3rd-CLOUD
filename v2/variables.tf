@@ -398,7 +398,7 @@ variable "ecs_container_images" {
 
 variable "ecs_prod_alb_cutover" {
   description = <<-EOT
-    Prod ALB의 ECS 규칙(우선순위 1~4)은 Compose 규칙(10·20)과 기본 동작(Compose frontend)보다 항상 먼저 평가된다.
+    Prod ALB의 ECS 규칙(우선순위 5~8)은 Compose 규칙(10·20)과 기본 동작(Compose frontend)보다 항상 먼저 평가된다.
     false(기본): ECS 규칙에 X-Moyeota-Stage: prod 헤더 조건을 붙인다 → 헤더가 있는 스모크 테스트 요청만 ECS로, 나머지는 Compose로 간다.
     true       : 헤더 조건을 뺀다 → Prod ALB로 들어온 모든 요청이 ECS로 간다.
     운영 트래픽이 Prod ALB로 들어오는 시점은 moyeota.com DNS 전환이므로, DNS 전환 전에 true로 apply한다.
@@ -815,6 +815,28 @@ variable "stg_data_layer_enabled" {
               보안그룹·SSM 파라미터·kafka-init 태스크 정의·MSK 설정은 남겨 다시 켤 때 그대로 쓴다.
               stg RDS(CLI 관리)는 scripts/stg-data-layer.sh로 중지하고, 7일 뒤 자동 시작되지 않도록
               stg_rds_keep_stopped_cron 스케줄이 매일 다시 중지한다.
+  EOT
+  type        = bool
+  default     = true
+}
+
+variable "private_nat_network_interface_id" {
+  description = <<-EOT
+    null(기본)이면 V2 NAT Gateway를 만들고 private 워크로드 서브넷의 기본 경로를 그쪽으로 보낸다.
+    ENI ID를 주면 NAT Gateway·EIP를 지우고 기본 경로를 그 ENI로 보낸다. v4 NAT 인스턴스 ENI를 쓴다
+    (v4 nat_extra_source_cidrs에 V2 private 서브넷을 먼저 넣어야 한다, v4/README.md NAT 런북).
+  EOT
+  type        = string
+  default     = null
+}
+
+variable "prod_data_layer_enabled" {
+  description = <<-EOT
+    prod MSK·ElastiCache Redis 스위치 (stg_data_layer.tf). v4 전환 후 prod 브로커는 v4 데이터 호스트가 맡는다.
+      true  : msk_stages·elasticache_redis_stages에 든 prod 클러스터를 운영한다.
+      false : prod MSK 클러스터와 prod Redis 복제 그룹만 삭제한다. 보안그룹과 SSM 파라미터는 남긴다
+              (v4 rest·websocket이 /moyeota/v2/prod/broker/CHAT_FANOUT_CHANNEL을 읽는다).
+    prod RDS는 이 스위치와 관계없다.
   EOT
   type        = bool
   default     = true
