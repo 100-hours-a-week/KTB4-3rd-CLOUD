@@ -6,7 +6,7 @@ zoneSpread: true
 
 # dev EKS 이미지는 CI가 dev-<sha> digest로 갱신한다.
 image:
-  digest: sha256:5041fefaf4e02ea2e8d7bf3a102387da599b26d22431e79369c0904a5016b7e0
+  digest: sha256:1f12e400317ec6ec88aa335faba03a986e7f9d2ca24475f265db01661da7b377
 
 hpa:
   minReplicas: 1
