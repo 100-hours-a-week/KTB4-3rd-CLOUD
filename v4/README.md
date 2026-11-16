@@ -157,8 +157,9 @@ v4 서브넷의 기본 경로를 V2 NAT Gateway에서 v4 NAT 인스턴스로 바
 | 1. 인스턴스 생성 | `nat_instance_enabled = true` | `terraform output nat_instance`로 공인 IP 확인. 외부 서비스에 서버 IP 허용 목록이 있으면 이 IP를 먼저 등록한다. SSM 접속 후 `cat /var/log/nat-bootstrap.log`, `sudo iptables -t nat -S` |
 | 2. 경로 전환 | `nat_mode = "instance"` | 데이터 호스트에서 `curl -sI https://registry-1.docker.io`, 태스크 로그에서 외부 API(카카오, OpenAI) 오류가 없는지, 새 태스크가 ECR 이미지를 받는지(서비스 하나 재배포) |
 | 3. 관찰 | — | 하루 동안 알람·로그 확인 |
-| 4. V2 NAT Gateway 삭제 | V2 작업(V2-6) | 설계 15절 조건 확인 후. 지우기 전까지는 롤백할 수 있다. V2 `moyeota-v2-private-workloads-rt`(app·dev·ops 서브넷)가 아직 이 NAT Gateway를 쓴다. 모니터링 EC2(ops-a, 공인 IP 없음)의 SSM·알림이 끊기지 않게, 먼저 NAT 인스턴스 SG·iptables 출발지에 V2 서브넷을 넣고 그 라우팅 테이블의 기본 경로를 NAT 인스턴스 ENI로 바꾼다 |
-| 롤백 | `nat_mode = "v2_gateway"` | 경로 대상만 바뀐다(ReplaceRoute) |
+| 4. V2 private 경로 이전 | v4 `nat_extra_source_cidrs = ["10.20.40.0/24", "10.20.41.0/24", "10.20.43.0/24"]` | V2 `private-workloads-rt`(app·dev·ops, 모니터링 EC2 포함)도 NAT 인스턴스로 내보낸다. apply는 SG만 바꾸므로 떠 있는 인스턴스에는 같은 FORWARD·MASQUERADE 규칙을 SSM으로 넣고 `iptables-save > /etc/sysconfig/iptables` |
+| 5. V2 NAT Gateway 삭제 | V2 `private_nat_network_interface_id = "<NAT 인스턴스 ENI>"` → `-target=aws_route.private_workloads_nat` apply | V2 경로가 ENI로 바뀌고 NAT Gateway·EIP가 지워진다. 먼저 `replace-route`로 경로만 바꿔 모니터링 EC2 외부 통신을 확인한 뒤 지운다. 2026-11-16 완료 |
+| 롤백 | `nat_mode = "v2_gateway"` | 경로 대상만 바뀐다(ReplaceRoute). **5단계 뒤에는 쓸 수 없다**: V2 `private_nat_network_interface_id = null`로 NAT Gateway를 다시 만든 뒤에만 가능 |
 
 - 경로는 인스턴스가 아니라 전용 ENI를 가리킨다. 하드웨어 장애는 자동 복구(같은 인스턴스·ENI·EIP), OS 무응답은 자동 재부팅으로 돌아온다. 둘 다 Discord로 알린다.
 - 인스턴스가 멈추면 v4 서브넷의 외부 통신(ECR pull, SSM, 외부 API)이 끊긴다. 이미 떠 있는 태스크는 계속 돌지만 외부 API 호출은 실패한다. 장애가 길어지면 롤백한다.

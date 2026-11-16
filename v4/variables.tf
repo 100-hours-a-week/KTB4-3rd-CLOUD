@@ -269,3 +269,13 @@ variable "nat_instance_type" {
   type        = string
   default     = "t4g.nano"
 }
+
+variable "nat_extra_source_cidrs" {
+  description = <<-EOT
+    v4 서브넷 외에 NAT 인스턴스를 거쳐 나갈 출발지 CIDR (예: V2 private 서브넷, V2 NAT Gateway 정리용).
+    SG 인바운드와 부트스트랩 iptables에 들어간다. 이미 떠 있는 인스턴스의 iptables는 user_data를 다시 실행하지 않으므로
+    SSM으로 같은 규칙을 넣거나 인스턴스를 교체한다 (README NAT 런북).
+  EOT
+  type        = list(string)
+  default     = []
+}

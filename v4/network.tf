@@ -28,7 +28,7 @@ resource "aws_route_table" "app" {
 resource "aws_route" "app_default" {
   route_table_id         = aws_route_table.app.id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = var.nat_mode == "v2_gateway" ? data.aws_nat_gateway.v2.id : null
+  nat_gateway_id         = var.nat_mode == "v2_gateway" ? one(data.aws_nat_gateway.v2[*].id) : null
   network_interface_id   = var.nat_mode == "instance" ? one(aws_network_interface.nat[*].id) : null
 
   lifecycle {

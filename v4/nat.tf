@@ -15,6 +15,7 @@ data "aws_ssm_parameter" "al2023_arm64" {
 locals {
   nat_instance_count = var.nat_instance_enabled ? 1 : 0
   app_subnet_cidrs   = [for s in aws_subnet.app : s.cidr_block]
+  nat_source_cidrs   = distinct(concat(local.app_subnet_cidrs, var.nat_extra_source_cidrs))
 }
 
 resource "aws_security_group" "nat" {
@@ -26,11 +27,11 @@ resource "aws_security_group" "nat" {
   revoke_rules_on_delete = true
 
   ingress {
-    description = "All traffic from v4 app subnets (forwarded to the internet)"
+    description = "All traffic from v4 app subnets and nat_extra_source_cidrs (forwarded to the internet)"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
-    cidr_blocks = local.app_subnet_cidrs
+    cidr_blocks = local.nat_source_cidrs
   }
 
   egress {
@@ -103,7 +104,7 @@ resource "aws_instance" "nat" {
   }
 
   user_data = templatefile("${path.module}/templates/nat/user_data.sh.tftpl", {
-    source_cidrs = local.app_subnet_cidrs
+    source_cidrs = local.nat_source_cidrs
   })
   user_data_replace_on_change = false
 

@@ -20,7 +20,10 @@ data "aws_subnet" "public" {
 }
 
 # 전환 직후 v4 private 서브넷의 기본 경로. NAT 인스턴스로 바꾸기 전까지 쓴다 (설계 5.6절).
+# nat_mode = "instance"면 조회하지 않는다 (V2 NAT Gateway를 지운 뒤에도 plan이 되게)
 data "aws_nat_gateway" "v2" {
+  count = var.nat_mode == "v2_gateway" ? 1 : 0
+
   vpc_id = data.aws_vpc.shared.id
   state  = "available"
   filter {
