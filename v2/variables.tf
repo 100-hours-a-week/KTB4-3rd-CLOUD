@@ -752,15 +752,15 @@ variable "dev_instance_schedule" {
       - ecs_start_cron / ecs_stop_cron : Dev ECS 서비스 desiredCount 복구/0
           → 태스크가 0개가 되면 Capacity Provider managed scaling이 Spot ASG를 0대로 줄인다.
           → 앱은 의존성(MySQL·Redis)보다 늦게 올리고 먼저 내리도록 호스트와 5분씩 어긋나게 둔다.
-    기본: 호스트 09:00 시작 / 00:00 중지, ECS 09:05 시작 / 23:55 중지 (Asia/Seoul).
-    주말을 빼려면 start_cron = "cron(0 9 ? * MON-FRI *)", stop_cron = "cron(0 0 ? * TUE-SAT *)",
-    ecs_start_cron = "cron(5 9 ? * MON-FRI *)", ecs_stop_cron = "cron(55 23 ? * MON-FRI *)".
+    기본: 호스트 평일(월~금) 09:00 시작 / 다음날 00:00 중지(화~토 00:00), ECS 매일 09:05 시작 / 23:55 중지 (Asia/Seoul).
+    ECS도 주말을 빼려면 ecs_start_cron = "cron(5 9 ? * MON-FRI *)", ecs_stop_cron = "cron(55 23 ? * MON-FRI *)".
+    호스트를 매일 돌리려면 start_cron = "cron(0 9 * * ? *)", stop_cron = "cron(0 0 * * ? *)".
   EOT
   type = object({
     enabled        = optional(bool, true)
     timezone       = optional(string, "Asia/Seoul")
-    start_cron     = optional(string, "cron(0 9 * * ? *)")
-    stop_cron      = optional(string, "cron(0 0 * * ? *)")
+    start_cron     = optional(string, "cron(0 9 ? * MON-FRI *)")
+    stop_cron      = optional(string, "cron(0 0 ? * TUE-SAT *)")
     ecs_enabled    = optional(bool, true)
     ecs_start_cron = optional(string, "cron(5 9 * * ? *)")
     ecs_stop_cron  = optional(string, "cron(55 23 * * ? *)")
