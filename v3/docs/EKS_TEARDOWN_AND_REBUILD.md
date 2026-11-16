@@ -55,7 +55,7 @@ for p in 5 6 8; do
 done
 ```
 
-이 규칙들은 3-6의 V2 apply(prod ECS 스테이지 삭제) 때 함께 사라진다. nonprod ALB의 stg·dev 시험 규칙(`X-Moyeota-Target: eks`)은 V3 state 소유라 destroy가 지운다.
+nonprod ALB의 V2 stg·dev 규칙(200·201·203, 300·301·303)도 EKS TG를 가중치 100으로 참조한다. 같은 방식으로 떼지 않으면 destroy가 stg·dev TG 6개에서 `ResourceInUse`로 실패한다. 위 반복문의 `moyeota-v2-alb`를 `moyeota-v2-nonprod-alb`로 바꾸고, 모든 리스너의 규칙 중 `moyeota-v3-eks`를 참조하는 것을 같은 방식으로 바꾼다(V2 TG는 `/moyeota-v2-`로 찾는다). nonprod ALB의 stg·dev 시험 규칙(`X-Moyeota-Target: eks`)은 V3 state 소유라 destroy가 지운다.
 
 ### 3-3. 앱과 플랫폼 내리기 (권장)
 
@@ -91,27 +91,34 @@ terraform apply teardown.tfplan
 
 ### 3-6. V2 정리 (설계 8.2절 V2-2~V2-5)
 
-V2 apply는 V2 prod 리스너 규칙(5·6·8)과 prod ECS 스테이지를 지운다. v4 규칙(1·2·3)이 트래픽을 받으므로 영향이 없다.
+**V2는 전체 apply를 하지 않는다.** CLI로 바꿔 둔 값과 코드가 달라서, 전체 apply는 아래를 되돌린다. 아래 표의 리소스만 `-target`으로 적용하고, plan에 다른 항목이 끼면 대상을 줄인다.
 
-| 변경 | tfvars·코드 |
-|---|---|
-| prod ECS 스테이지 삭제 | `ecs_stages`, `ecs_container_images.prod` |
-| MSK·ElastiCache prod 삭제 | `msk_stages`, `elasticache_redis_stages` |
-| RDS micro | `rds_instance_class = "db.t4g.micro"` (EKS가 빠져 연결 수가 줄어든 뒤. 2026-11-15 기준 EKS+v4 연결 약 80개) |
-| nonprod 정리 | dev·stg ECS, dev EC2, dev Kafka, Qdrant, nonprod ALB |
+- prod·stg ECS 오토스케일링 최소값(0 → 1~2)과 prod ASG `min_size`(0 → 3): V2 태스크가 v4 옆에서 떠서 같은 RDS를 쓴다
+- dev 시작 스케줄 `DISABLED → ENABLED`
+- S3 게이트웨이 엔드포인트에서 v4가 붙인 라우팅 테이블 연결 제거 (`v4/network.tf`의 `s3_app`)
+
+| 변경 | tfvars·코드 | 비고 |
+|---|---|---|
+| prod MSK·Redis 클러스터 삭제 | `prod_data_layer_enabled = false` | 보안그룹·SSM은 남긴다. v4가 `/moyeota/v2/prod/broker/CHAT_FANOUT_CHANNEL`을 읽는다 |
+| RDS micro | `rds_instance_class = "db.t4g.micro"` | `apply_immediately = false`라 다음 유지보수 창(일 19:00 UTC)에 적용된다. EKS를 내린 뒤 연결은 약 20개 |
+
+- **prod ECS 스테이지는 지우지 않는다.** `ecs_stages`의 prod가 `/moyeota/v2/prod/*` 앱 SSM 파라미터(v4가 읽음)도 만든다. 태스크 0개라 비용은 거의 없다.
+- RDS에 예전 apply가 남긴 대기 변경(예: Multi-AZ 전환)이 있으면 유지보수 창에서 함께 적용된다. 적용 전에 `describe-db-instances`의 `PendingModifiedValues`를 확인한다.
+- micro(1GiB)에서는 `performance_schema = 1`이 메모리를 많이 써서 RDS가 `innodb_buffer_pool_size`를 크게 줄인다. 끄려면 파라미터 변경 후 재부팅이 필요하다.
+- migration 버킷(V1 prod 덤프 포함), Qdrant nonprod, dev Kafka, nonprod ALB는 따로 판단한다.
 
 정리 후 `alb-weight.sh`, `cutover-check.sh`는 대상 규칙·TG가 없어 쓰지 않는다.
 
 ## 4. 재구축 절차
 
-D3 이후 다시 띄우면 V2 MSK·ElastiCache와 V2 prod 리스너 규칙이 없다. 아래 순서로 빈 부분을 채운다. 준비가 되어 있으면 2~3시간 걸린다.
+D3 이후 다시 띄우면 V2 MSK·ElastiCache 클러스터가 없고, V2 prod 리스너 규칙(5·6·8)은 V2 ECS TG만 가리킨다. 아래 순서로 빈 부분을 채운다. 준비가 되어 있으면 2~3시간 걸린다.
 
 | 순서 | 할 일 | 시간 |
 |---|---|---|
 | 1 | 백업한 `v3/eks/terraform.tfvars` 복원 → `terraform apply` (클러스터, 노드, MongoDB, NAT-c, TG) | 25~30분 |
 | 2 | `aws eks update-kubeconfig --name moyeota-v3-eks` → `v3/helm/install-platform.sh` (congestion-logs 포함) | 10분 |
 | 3 | Argo CD 알림 Secret 생성 (`v3/argocd/README.md` 공통 2번) | 수 분 |
-| 4 | **브로커 준비:** (a) V2에서 `msk_stages`·`elasticache_redis_stages`에 prod를 넣고 해당 리소스만 `-target` apply(약 40분), 또는 (b) V3가 v4 데이터 호스트를 쓰도록 `/moyeota/v2/prod/broker/*` 값을 바꾸고 v4 데이터 호스트 SG에 V3 노드 SG 인바운드를 추가 | 수 분~40분 |
+| 4 | **브로커 준비:** (a) V2 `prod_data_layer_enabled = true`로 바꾸고 `aws_msk_cluster.kafka["prod"]`·`aws_elasticache_replication_group.redis["prod"]`와 브로커 SSM만 `-target` apply(약 40분), 또는 (b) V3가 v4 데이터 호스트를 쓰도록 `/moyeota/v2/prod/broker/*` 값을 바꾸고 v4 데이터 호스트 SG에 V3 노드 SG 인바운드를 추가 | 수 분~40분 |
 | 5 | **MongoDB 데이터:** 새 EBS는 비어 있다. v4 데이터 호스트에서 V3 replica set으로 역이관(`mongo-migrate.sh`의 원본·대상을 바꿔 실행)하거나, 3-1 스냅샷으로 볼륨을 만들어 교체 | 수 분~30분 |
 | 6 | **TG ARN 갱신:** 새 TG ARN을 `v3/helm/app-values/prod/{rest-api,websocket,frontend}.yaml`의 `targetGroupBinding.targetGroupARN`에 넣고 main에 머지 (Argo CD는 main을 sync) | 수 분 |
 | 7 | `kubectl apply -f v3/argocd/projects/prod.yaml -f v3/argocd/prod/` → Argo CD에서 수동 sync | 10분 |
@@ -126,7 +133,7 @@ D3 이후 다시 띄우면 V2 MSK·ElastiCache와 V2 prod 리스너 규칙이 �
 
 - [ ] `aws eks list-clusters`에 `moyeota-v3-eks` 없음
 - [ ] EC2에 `moyeota-v3-*` 인스턴스 없음, 남은 EBS는 스냅샷 확인 후 삭제
-- [ ] prod 리스너 규칙: v4 1·2·3과 옛 Compose 10·20, default만 남음 (V2 apply 후)
+- [ ] 어떤 리스너 규칙도 `moyeota-v3-eks` TG를 참조하지 않음 (prod 5·6·8은 V2 ECS TG 단독으로 남는다)
 - [ ] v4 서비스·알람 정상, `moyeota-v4-prod-rds-connections` OK로 복귀
 
 재구축 후:
