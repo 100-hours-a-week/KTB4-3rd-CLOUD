@@ -68,6 +68,9 @@ helm upgrade --install alloy grafana/alloy \
   --values values/alloy.yaml \
   --wait --timeout 5m
 
+helm upgrade --install congestion-logs ./congestion-logs \
+  --namespace monitoring --wait --timeout 5m
+
 helm upgrade --install argocd argo/argo-cd \
   --version "$ARGOCD_CHART_VERSION" \
   --namespace argocd --create-namespace \

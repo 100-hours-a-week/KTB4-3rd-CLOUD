@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: congestion-logs
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: congestion-logs
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: congestion-logs
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: congestion-logs
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: congestion-logs
+      automountServiceAccountToken: false
+      nodeSelector:
+        stage: stg
+      tolerations:
+        - key: stage
+          operator: Equal
+          value: stg
+          effect: NoSchedule
+      containers:
+        - name: fluent-bit
+          image: {{ .Values.image | quote }}
+          command: ["/fluent-bit/bin/fluent-bit"]
+          args: ["-c", "/fluent-bit/etc/congestion/fluent-bit.conf"]
+          env:
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+            - name: AWS_EC2_METADATA_DISABLED
+              value: "true"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              memory: 160Mi
+          volumeMounts:
+            - name: config
+              mountPath: /fluent-bit/etc/congestion
+              readOnly: true
+            - name: pod-logs
+              mountPath: /var/log/pods
+              readOnly: true
+            - name: state
+              mountPath: /var/lib/congestion-logs
+      volumes:
+        - name: config
+          configMap:
+            name: congestion-logs
+        - name: pod-logs
+          hostPath:
+            path: /var/log/pods
+            type: Directory
+        - name: state
+          hostPath:
+            path: /var/lib/moyeota-congestion-logs
+            type: DirectoryOrCreate
