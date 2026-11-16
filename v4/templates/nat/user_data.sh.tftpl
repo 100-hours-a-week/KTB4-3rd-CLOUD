@@ -11,7 +11,16 @@ net.ipv4.ip_forward = 1
 SYSCTL
 sysctl --system >/dev/null
 
-dnf install -y iptables-services
+# t4g.nano(메모리 0.5GiB)는 dnf 메타데이터를 처리하다 메모리 부족으로 종료된다 → 디스크 스왑 1GiB를 먼저 만든다
+if ! swapon --show=NAME --noheadings | grep -qx /swapfile; then
+  fallocate -l 1G /swapfile
+  chmod 600 /swapfile
+  mkswap /swapfile >/dev/null
+  swapon /swapfile
+  echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+dnf install -y --setopt=install_weak_deps=False iptables-services
 systemctl enable iptables
 
 iface="$(ip -o -4 route show to default | awk '{print $5; exit}')"

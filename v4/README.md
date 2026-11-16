@@ -157,9 +157,11 @@ v4 서브넷의 기본 경로를 V2 NAT Gateway에서 v4 NAT 인스턴스로 바
 | 1. 인스턴스 생성 | `nat_instance_enabled = true` | `terraform output nat_instance`로 공인 IP 확인. 외부 서비스에 서버 IP 허용 목록이 있으면 이 IP를 먼저 등록한다. SSM 접속 후 `cat /var/log/nat-bootstrap.log`, `sudo iptables -t nat -S` |
 | 2. 경로 전환 | `nat_mode = "instance"` | 데이터 호스트에서 `curl -sI https://registry-1.docker.io`, 태스크 로그에서 외부 API(카카오, OpenAI) 오류가 없는지, 새 태스크가 ECR 이미지를 받는지(서비스 하나 재배포) |
 | 3. 관찰 | — | 하루 동안 알람·로그 확인 |
-| 4. V2 NAT Gateway 삭제 | V2 작업(V2-6) | 설계 15절 조건 확인 후. 지우기 전까지는 롤백할 수 있다 |
+| 4. V2 NAT Gateway 삭제 | V2 작업(V2-6) | 설계 15절 조건 확인 후. 지우기 전까지는 롤백할 수 있다. V2 `moyeota-v2-private-workloads-rt`(app·dev·ops 서브넷)가 아직 이 NAT Gateway를 쓴다. 모니터링 EC2(ops-a, 공인 IP 없음)의 SSM·알림이 끊기지 않게, 먼저 NAT 인스턴스 SG·iptables 출발지에 V2 서브넷을 넣고 그 라우팅 테이블의 기본 경로를 NAT 인스턴스 ENI로 바꾼다 |
 | 롤백 | `nat_mode = "v2_gateway"` | 경로 대상만 바뀐다(ReplaceRoute) |
 
 - 경로는 인스턴스가 아니라 전용 ENI를 가리킨다. 하드웨어 장애는 자동 복구(같은 인스턴스·ENI·EIP), OS 무응답은 자동 재부팅으로 돌아온다. 둘 다 Discord로 알린다.
 - 인스턴스가 멈추면 v4 서브넷의 외부 통신(ECR pull, SSM, 외부 API)이 끊긴다. 이미 떠 있는 태스크는 계속 돌지만 외부 API 호출은 실패한다. 장애가 길어지면 롤백한다.
 - S3(ECR 레이어, 이미지 버킷)는 Gateway Endpoint로 가므로 NAT를 거치지 않는다.
+- t4g.nano는 메모리가 0.5GiB라 부트스트랩의 `dnf install`이 메모리 부족으로 종료됐다. 템플릿이 스왑 파일 1GiB를 먼저 만든다. 템플릿을 바꾼 뒤에는 `-replace='aws_instance.nat[0]'`로 교체해야 반영된다(`user_data` 무시).
+- `aws_instance.nat`의 `source_dest_check`는 무시한다. 기본 ENI 값(false)을 provider가 true로 되돌리려 하는데, 적용되면 NAT 전달이 멈춘다. plan에 이 속성이 보이면 적용하지 않는다.

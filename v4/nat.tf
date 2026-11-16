@@ -108,8 +108,10 @@ resource "aws_instance" "nat" {
   user_data_replace_on_change = false
 
   # NAT 설정은 부팅 때 한 번 한다. AMI·user_data 변경으로 교체되지 않게 한다.
+  # source_dest_check: 인스턴스의 값은 기본 ENI의 값(false)과 같다. primary_network_interface와 함께 지정할 수 없어
+  #   설정에 없으면 provider가 기본값 true로 되돌리려 하고, 그대로 적용하면 NAT 전달이 멈춘다 → 무시한다.
   lifecycle {
-    ignore_changes = [ami, user_data]
+    ignore_changes = [ami, user_data, source_dest_check]
   }
 
   metadata_options {
@@ -166,8 +168,9 @@ resource "aws_cloudwatch_metric_alarm" "nat_instance_check" {
   evaluation_periods  = 3
   threshold           = 0
   comparison_operator = "GreaterThanThreshold"
-  treat_missing_data  = "breaching"
-  alarm_actions       = ["arn:${local.partition}:automate:${local.region}:ec2:reboot"]
+  # 상태 검사 값은 OS가 멈춰도 하이퍼바이저가 1로 보고한다. 값이 없을 때(부팅 직후 등)는 재부팅하지 않는다.
+  treat_missing_data = "missing"
+  alarm_actions      = ["arn:${local.partition}:automate:${local.region}:ec2:reboot"]
 
   dimensions = {
     InstanceId = aws_instance.nat[0].id
