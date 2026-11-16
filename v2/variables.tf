@@ -820,6 +820,16 @@ variable "stg_data_layer_enabled" {
   default     = true
 }
 
+variable "private_nat_network_interface_id" {
+  description = <<-EOT
+    null(기본)이면 V2 NAT Gateway를 만들고 private 워크로드 서브넷의 기본 경로를 그쪽으로 보낸다.
+    ENI ID를 주면 NAT Gateway·EIP를 지우고 기본 경로를 그 ENI로 보낸다. v4 NAT 인스턴스 ENI를 쓴다
+    (v4 nat_extra_source_cidrs에 V2 private 서브넷을 먼저 넣어야 한다, v4/README.md NAT 런북).
+  EOT
+  type        = string
+  default     = null
+}
+
 variable "prod_data_layer_enabled" {
   description = <<-EOT
     prod MSK·ElastiCache Redis 스위치 (stg_data_layer.tf). v4 전환 후 prod 브로커는 v4 데이터 호스트가 맡는다.

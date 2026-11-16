@@ -49,7 +49,24 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+# var.private_nat_network_interface_id를 주면 NAT Gateway·EIP를 만들지 않고 private 경로를 그 ENI(v4 NAT 인스턴스)로 보낸다
+locals {
+  nat_gateway_enabled = var.private_nat_network_interface_id == null
+}
+
+moved {
+  from = aws_eip.nat
+  to   = aws_eip.nat[0]
+}
+
+moved {
+  from = aws_nat_gateway.single_az
+  to   = aws_nat_gateway.single_az[0]
+}
+
 resource "aws_eip" "nat" {
+  count = local.nat_gateway_enabled ? 1 : 0
+
   domain = "vpc"
 
   tags = {
@@ -58,7 +75,9 @@ resource "aws_eip" "nat" {
 }
 
 resource "aws_nat_gateway" "single_az" {
-  allocation_id = aws_eip.nat.id
+  count = local.nat_gateway_enabled ? 1 : 0
+
+  allocation_id = aws_eip.nat[0].id
   subnet_id     = aws_subnet.v2["public_a"].id
 
   depends_on = [aws_route.public_internet]
@@ -80,7 +99,8 @@ resource "aws_route_table" "private_workloads" {
 resource "aws_route" "private_workloads_nat" {
   route_table_id         = aws_route_table.private_workloads.id
   destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.single_az.id
+  nat_gateway_id         = local.nat_gateway_enabled ? aws_nat_gateway.single_az[0].id : null
+  network_interface_id   = local.nat_gateway_enabled ? null : var.private_nat_network_interface_id
 }
 
 resource "aws_route_table_association" "private_workloads" {
