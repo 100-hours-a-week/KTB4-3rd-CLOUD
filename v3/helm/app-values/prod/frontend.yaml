@@ -1,7 +1,7 @@
 stage: prod
 
 image:
-  digest: sha256:933eb4e70030c8ea0a8222fb0b02c93fdcbb5801775975655f9d1956f69d9710
+  digest: sha256:b4ff56e63ff427dccbde4fa2a529be6b8a51d5ea956894ebd65ff52385a87606
 
 nodeWorkload: burst
 zoneSpread: true
