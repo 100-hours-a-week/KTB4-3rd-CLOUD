@@ -6,7 +6,7 @@ nodeStage: stg
 zoneSpread: true
 
 image:
-  digest: sha256:2fb165ff9dffb541936403507a2ae6aa71f0ac9847943aec351a8ee27717e6cf
+  digest: sha256:ea0487c83e0f2fed56448979edeb38a96fbf58a9b0d9c6d684f5dbfde667294b
 
 # dev Alloy 수집 경로가 아직 없다.
 metrics:
